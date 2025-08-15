@@ -1,0 +1,19 @@
+# BD2自动化系统依赖清单
+# 核心网络库
+requests>=2.31.0
+
+# HTML解析库
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# 进度条显示
+tqdm>=4.65.0
+
+# Unity资源处理
+UnityPy>=1.20.0
+
+# 图像处理
+Pillow>=10.0.0
+
+# Protobuf解析
+blackboxprotobuf>=1.0.0

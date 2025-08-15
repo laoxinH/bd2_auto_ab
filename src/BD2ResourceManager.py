@@ -1,0 +1,952 @@
+#!/usr/bin/env python3
+"""
+BD2资源替换主控制器
+
+BD2游戏资源替换自动化流程控制器，包括：
+- 版本检测和更新
+- 替换文件变更追踪
+- 资源下载和替换
+
+作者: OLDNEW
+日期: 2025-08-14
+"""
+
+import json
+import logging
+import os
+import time
+from pathlib import Path
+from typing import Dict, List, Tuple, Optional, Any
+from dataclasses import dataclass
+
+# 导入项目模块
+from BD2CDNAPI import BD2CDNAPI
+from BD2DataDownloader import BD2DataDownloader
+from UnityResourceProcessor import UnityResourceProcessor  
+from CharacterScraper import CharacterScraper
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ReplaceTask:
+    """替换任务信息"""
+    char: str
+    costume: str
+    type: str
+    replace_dir: str
+    data_name: str
+    downloaded_dir: str
+    target_dir: str
+    mod_name: str = ""
+    idle_or_cutscene_value: str = ""
+    hash_id: str = ""
+    should_execute: bool = True  # 是否需要执行该任务
+    
+
+
+@dataclass
+class ReplaceEntry:
+    """替换目录条目"""
+    path: str
+    mtime: float
+    subfile: List[Dict[str, Any]]
+
+
+@dataclass
+class UpdateSummary:
+    """更新摘要"""
+    version_changed: bool = False
+    old_version: Optional[int] = None
+    new_version: Optional[int] = None
+    replace_dirs_to_update: List[str] = None
+    total_replace_dirs: int = 0
+    
+    def __post_init__(self):
+        if self.replace_dirs_to_update is None:
+            self.replace_dirs_to_update = []
+
+
+class BD2ResourceManager:
+    """BD2资源管理器主控制器"""
+    
+    def __init__(self, project_root: str = None, proxies : Optional[Dict[str, str]] = None):
+        """
+        初始化BD2资源管理器
+        
+        参数:
+            project_root: 项目根目录，默认为当前脚本的上级目录
+        """
+        if project_root is None:
+            # 获取项目根目录（main_v2.py的上级目录）
+            current_file = Path(__file__).resolve()
+            self.project_root = current_file.parent.parent
+        else:
+            self.project_root = Path(project_root)
+        
+        self.data_json_path = self.project_root / "data.json"
+        self.replace_dir = self.project_root / "replace"
+        self.downloaded_dir = self.project_root / "sourcedata"
+        self.target_dir = self.project_root / "target"
+        
+        # 初始化组件
+        self.cdn_api = BD2CDNAPI(proxies=proxies)
+        self.character_scraper = CharacterScraper()
+        self.unity_processor = UnityResourceProcessor()
+        self.data_downloader = BD2DataDownloader(output_dir=str(self.downloaded_dir),proxies=proxies)
+        
+        logger.info(f"BD2资源管理器初始化完成，项目根目录: {self.project_root}")
+    
+    def _load_data_json(self) -> Dict[str, Any]:
+        """
+        加载data.json文件
+        
+        返回:
+            Dict[str, Any]: data.json内容，如果文件不存在返回默认结构
+        """
+        if not self.data_json_path.exists():
+            logger.info("data.json不存在，将创建默认配置")
+            return {
+                "version": 0,
+                "updateTime": 0,
+                "replaceDir": []
+            }
+        
+        try:
+            with open(self.data_json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                logger.info(f"成功加载data.json，当前版本: {data.get('version', 0)}")
+                return data
+        except Exception as e:
+            logger.error(f"加载data.json失败: {e}")
+            logger.info("使用默认配置")
+            return {
+                "version": 0,
+                "updateTime": 0,
+                "replaceDir": []
+            }
+    
+    def _save_data_json(self, data: Dict[str, Any]) -> None:
+        """
+        保存data.json文件
+        
+        参数:
+            data: 要保存的数据
+        """
+        try:
+            with open(self.data_json_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+            logger.info(f"成功保存data.json，版本: {data.get('version', 0)}")
+        except Exception as e:
+            logger.error(f"保存data.json失败: {e}")
+            raise
+    
+    def _get_directory_mtime(self, dir_path: Path) -> float:
+        """
+        获取目录的最后修改时间（取目录内所有文件的最新修改时间）
+        
+        参数:
+            dir_path: 目录路径
+            
+        返回:
+            float: 最后修改时间戳
+        """
+        if not dir_path.exists():
+            return 0.0
+        
+        max_mtime = dir_path.stat().st_mtime
+        
+        try:
+            for item in dir_path.rglob('*'):
+                if item.is_file():
+                    max_mtime = max(max_mtime, item.stat().st_mtime)
+        except Exception as e:
+            logger.warning(f"获取目录修改时间失败 {dir_path}: {e}")
+        
+        return max_mtime
+    
+    def _get_subfiles_info(self, dir_path: Path) -> List[Dict[str, Any]]:
+        """
+        获取目录下所有子文件的信息
+        
+        参数:
+            dir_path: 目录路径
+            
+        返回:
+            List[Dict]: 子文件信息列表
+        """
+        subfiles = []
+        if not dir_path.exists():
+            return subfiles
+        
+        try:
+            for item in dir_path.iterdir():
+                if item.is_file():
+                    subfiles.append({
+                        "path": str(item),
+                        "mtime": item.stat().st_mtime
+                    })
+                elif item.is_dir():
+                    # 递归处理子目录
+                    subfiles.append({
+                        "path": str(item),
+                        "mtime": self._get_directory_mtime(item)
+                    })
+        except Exception as e:
+            logger.warning(f"获取子文件信息失败 {dir_path}: {e}")
+        
+        return subfiles
+    
+    def _scan_replace_directories(self) -> List[str]:
+        """
+        扫描replace目录下的所有三级子目录
+        
+        返回:
+            List[str]: 三级子目录路径列表
+        """
+        replace_dirs = []
+        
+        if not self.replace_dir.exists():
+            logger.warning(f"replace目录不存在: {self.replace_dir}")
+            return replace_dirs
+        
+        try:
+            # 遍历 replace/*/*/
+            for level1 in self.replace_dir.iterdir():
+                if level1.is_dir():
+                    for level2 in level1.iterdir():
+                        if level2.is_dir():
+                            for level3 in level2.iterdir():
+                                if level3.is_dir():
+                                    relative_path = level3.relative_to(self.project_root)
+                                    replace_dirs.append(str(relative_path))
+            
+            logger.info(f"扫描到 {len(replace_dirs)} 个替换目录")
+            return replace_dirs
+            
+        except Exception as e:
+            logger.error(f"扫描replace目录失败: {e}")
+            return replace_dirs
+    
+    def _is_directory_empty(self, dir_path: Path) -> bool:
+        """
+        检查目录是否为空（没有任何文件，只有空文件夹）
+        
+        参数:
+            dir_path: 目录路径
+            
+        返回:
+            bool: 如果目录为空返回True
+        """
+        if not dir_path.exists():
+            return True
+        
+        try:
+            # 检查是否有任何文件
+            for item in dir_path.rglob('*'):
+                if item.is_file():
+                    return False
+            return True
+        except Exception as e:
+            logger.warning(f"检查目录是否为空失败 {dir_path}: {e}")
+            return True
+    
+    def check_version_and_updates(self) -> Tuple[bool, UpdateSummary]:
+        """
+        检测游戏版本和替换文件更新
+        
+        返回:
+            Tuple[bool, UpdateSummary]: (是否需要更新, 更新摘要)
+        """
+        logger.info("开始检测版本和文件更新...")
+        
+        # 加载当前配置
+        data = self._load_data_json()
+        current_version = data.get("version", 0)
+        current_update_time = data.get("updateTime", 0)
+        
+        # 创建更新摘要
+        summary = UpdateSummary()
+        summary.old_version = current_version
+        
+        needs_update = False
+        
+        try:
+            # 第一步：检测游戏版本
+            logger.info("检测游戏版本...")
+            server_info = self.cdn_api.get_version_info()
+            server_version = int(server_info.version)  # BD2VersionInfo.version
+            server_update_time = int(server_info.version)  # 使用版本号作为更新时间
+            
+            summary.new_version = server_version
+            
+            if server_version != current_version or server_update_time != current_update_time:
+                logger.info(f"游戏版本有更新: {current_version} -> {server_version}")
+                summary.version_changed = True
+                needs_update = True
+                
+                # 更新版本信息
+                data["version"] = server_version
+                data["updateTime"] = server_update_time
+                self._save_data_json(data)
+            else:
+                logger.info("游戏版本无变化")
+            
+            # 第二步：建立replace_update清单
+            logger.info("检测替换文件更新...")
+            current_replace_dirs = self._scan_replace_directories()
+            summary.total_replace_dirs = len(current_replace_dirs)
+            
+            # 构建现有replaceDir映射
+            existing_replace_map = {}
+            for entry in data.get("replaceDir", []):
+                # 将绝对路径转换为相对路径进行比较
+                rel_path = Path(entry["path"]).relative_to(self.project_root)
+                existing_replace_map[str(rel_path)] = entry
+            
+            updated_replace_dirs = []
+            dirs_to_update = []
+            
+            # 检查每个替换目录
+            for replace_dir_rel in current_replace_dirs:
+                replace_dir_path = self.project_root / replace_dir_rel
+                current_mtime = self._get_directory_mtime(replace_dir_path)
+                current_subfiles = self._get_subfiles_info(replace_dir_path)
+                
+                # 检查是否已存在
+                if replace_dir_rel in existing_replace_map:
+                    existing_entry = existing_replace_map[replace_dir_rel]
+                    existing_mtime = existing_entry.get("mtime", 0)
+                    existing_subfiles = existing_entry.get("subfile", [])
+                    
+                    # 比较目录修改时间
+                    if abs(current_mtime - existing_mtime) > 1:  # 允许1秒误差
+                        logger.info(f"目录已更新: {replace_dir_rel}")
+                        dirs_to_update.append(replace_dir_rel)
+                        needs_update = True
+                    else:
+                        # 比较子文件
+                        subfiles_changed = False
+                        existing_subfile_map = {sf["path"]: sf["mtime"] for sf in existing_subfiles}
+                        
+                        for subfile in current_subfiles:
+                            subfile_path = subfile["path"]
+                            subfile_mtime = subfile["mtime"]
+                            
+                            if (subfile_path not in existing_subfile_map or 
+                                abs(subfile_mtime - existing_subfile_map[subfile_path]) > 1):
+                                subfiles_changed = True
+                                break
+                        
+                        # 检查是否有子文件被删除
+                        current_subfile_paths = {sf["path"] for sf in current_subfiles}
+                        for existing_subfile_path in existing_subfile_map:
+                            if existing_subfile_path not in current_subfile_paths:
+                                subfiles_changed = True
+                                break
+                        
+                        if subfiles_changed:
+                            logger.info(f"子文件已更新: {replace_dir_rel}")
+                            dirs_to_update.append(replace_dir_rel)
+                            needs_update = True
+                
+                else:
+                    # 新增的目录
+                    logger.info(f"发现新目录: {replace_dir_rel}")
+                    dirs_to_update.append(replace_dir_rel)
+                    needs_update = True
+                
+                # 更新条目
+                updated_replace_dirs.append({
+                    "path": str(replace_dir_path),
+                    "mtime": current_mtime,
+                    "subfile": current_subfiles
+                })
+            
+            # 检查已删除的目录
+            for existing_rel_path in existing_replace_map:
+                if existing_rel_path not in current_replace_dirs:
+                    logger.info(f"目录已删除: {existing_rel_path}")
+                    needs_update = True
+            
+            # 更新data.json中的replaceDir
+            if needs_update:
+                data["replaceDir"] = updated_replace_dirs
+                self._save_data_json(data)
+            
+            summary.replace_dirs_to_update = dirs_to_update
+            
+            logger.info(f"检测完成: 需要更新={needs_update}, 版本变化={summary.version_changed}, 目录更新数={len(dirs_to_update)}")
+            
+            return needs_update, summary
+            
+        except Exception as e:
+            logger.error(f"检测版本和更新失败: {e}")
+            return True, summary  # 出错时返回需要更新
+    
+    def _build_replace_mapping(self, specific_dirs: List[str] = None) -> List[ReplaceTask]:
+        """
+        建立替换映射清单
+        
+        参数:
+            specific_dirs: 指定要处理的目录列表（增量更新时使用），为None时处理所有目录
+            
+        返回:
+            List[ReplaceTask]: 替换任务列表
+        """
+        if specific_dirs:
+            logger.info(f"开始建立增量替换映射清单，处理 {len(specific_dirs)} 个目录...")
+        else:
+            logger.info("开始建立完整替换映射清单...")
+        
+        replace_tasks = []
+        
+        if not self.replace_dir.exists():
+            logger.warning(f"replace目录不存在: {self.replace_dir}")
+            return replace_tasks
+        
+        try:
+            # 转换specific_dirs为相对路径的集合以便快速查找
+            specific_dirs_set = set()
+            if specific_dirs:
+                for dir_path in specific_dirs:
+                    # 确保路径以replace开头的相对路径格式
+                    if not dir_path.startswith("replace"):
+                        dir_path = f"replace/{dir_path}"
+                    specific_dirs_set.add(dir_path.replace("\\", "/"))
+            
+            # 处理所有目录，无论是否指定了特定目录
+            for char_dir in self.replace_dir.iterdir():
+                if not char_dir.is_dir():
+                    continue
+                
+                char = char_dir.name
+                logger.info(f"处理角色: {char}")
+                
+                for costume_dir in char_dir.iterdir():
+                    if not costume_dir.is_dir():
+                        continue
+                    
+                    costume = costume_dir.name
+                    logger.info(f"  处理服装: {costume}")
+                    
+                    for type_dir in costume_dir.iterdir():
+                        if not type_dir.is_dir():
+                            continue
+                        
+                        type_name = type_dir.name
+                        logger.info(f"    处理类型: {type_name}")
+                        
+                        # 检查目录是否为空
+                        if self._is_directory_empty(type_dir):
+                            logger.info(f"      跳过空目录: {char}/{costume}/{type_name}")
+                            continue
+                        
+                        # 确定任务是否应该执行
+                        should_execute = True
+                        if specific_dirs:
+                            # 构建当前目录的相对路径
+                            current_dir_rel = type_dir.relative_to(self.project_root)
+                            current_dir_rel_str = str(current_dir_rel).replace("\\", "/")
+                            should_execute = current_dir_rel_str in specific_dirs_set
+                            
+                            if should_execute:
+                                logger.info(f"      ✓ 目录在更新列表中: {char}/{costume}/{type_name}")
+                            else:
+                                logger.info(f"      - 目录不在更新列表中: {char}/{costume}/{type_name}")
+                        
+                        task = self._create_replace_task(char, costume, type_name, type_dir, should_execute)
+                        if task:
+                            replace_tasks.append(task)
+            
+            # 统计任务数量
+            execute_count = sum(1 for task in replace_tasks if task.should_execute)
+            total_count = len(replace_tasks)
+            
+            logger.info(f"替换映射清单建立完成，共 {total_count} 个任务，其中 {execute_count} 个需要执行")
+            return replace_tasks
+            
+        except Exception as e:
+            logger.error(f"建立替换映射清单失败: {e}")
+            return replace_tasks
+    
+    def _create_replace_task(self, char: str, costume: str, type_name: str, type_dir: Path, should_execute: bool = True) -> Optional[ReplaceTask]:
+        """
+        为单个目录创建替换任务
+        
+        参数:
+            char: 角色名
+            costume: 服装名
+            type_name: 类型名(IDLE/CUTSCENE)
+            type_dir: 类型目录路径
+            should_execute: 是否需要执行该任务
+            
+        返回:
+            Optional[ReplaceTask]: 创建的任务，失败时返回None
+        """
+        try:
+            # 获取idle值或cutscene值
+            if type_name.upper() == "IDLE":
+                idle_or_cutscene_value = self.character_scraper.get_idle(char, costume)
+            elif type_name.upper() == "CUTSCENE":
+                idle_or_cutscene_value = self.character_scraper.get_cutscene(char, costume)
+            else:
+                logger.warning(f"未知类型: {type_name}，跳过")
+                return None
+            
+            if not idle_or_cutscene_value:
+                logger.warning(f"无法获取 {char}/{costume}/{type_name} 的值，跳过")
+                return None
+            
+            logger.info(f"      获取到值: {idle_or_cutscene_value}")
+            
+            # 通过BD2CDNAPI获取资源名称和hash
+            result = self.cdn_api.get_resource_bundle_name_and_hash(idle_or_cutscene_value)
+            if not result:
+                logger.warning(f"无法获取 {idle_or_cutscene_value} 的资源信息，跳过")
+                return None
+            
+            resource_name, hash_id = result
+            logger.info(f"      资源名称: {resource_name}, Hash: {hash_id}")
+            
+            # 构建路径
+            replace_dir_path = str(type_dir)
+            downloaded_dir = f"{self.downloaded_dir}{os.sep}{resource_name}"
+            target_dir = f"{self.target_dir}/{idle_or_cutscene_value}/{hash_id}/__data"
+            
+            # 获取mod名称（如果存在子目录）
+            mod_name = ""
+            sub_dirs = [item for item in type_dir.iterdir() if item.is_dir()]
+            if sub_dirs:
+                mod_name = sub_dirs[0].name
+            
+            # 创建替换任务
+            task = ReplaceTask(
+                char=char,
+                costume=costume,
+                type=type_name,
+                replace_dir=replace_dir_path,
+                data_name=resource_name,
+                downloaded_dir=downloaded_dir,
+                target_dir=target_dir,
+                mod_name=mod_name,
+                idle_or_cutscene_value=idle_or_cutscene_value,
+                hash_id=hash_id,
+                should_execute=should_execute
+            )
+            
+            status_text = "✅ 添加替换任务" if should_execute else "📋 添加任务(不执行)"
+            logger.info(f"      {status_text}: {char}/{costume}/{type_name}")
+            return task
+            
+        except Exception as e:
+            logger.error(f"创建替换任务失败 {char}/{costume}/{type_name}: {e}")
+            return None
+    
+    def _save_replace_mapping(self, tasks: List[ReplaceTask], filename: str = "清单.json") -> None:
+        """
+        保存替换映射清单到JSON文件
+        
+        参数:
+            tasks: 替换任务列表
+            filename: 保存的文件名
+        """
+        try:
+            # 转换为JSON格式
+            json_data = []
+            for task in tasks:
+                json_data.append({
+                    "char": task.char,
+                    "costume": task.costume,
+                    "type": task.type,
+                    "replaceDir": task.replace_dir,
+                    "dataName": task.data_name,
+                    "downloadedDir": task.downloaded_dir,
+                    "targetDir": task.target_dir,
+                    "modName": task.mod_name,
+                    "shouldExecute": task.should_execute
+                })
+            
+            # 保存到文件
+            mapping_file = self.project_root / filename
+            with open(mapping_file, 'w', encoding='utf-8') as f:
+                json.dump(json_data, f, indent=4, ensure_ascii=False)
+            
+            logger.info(f"替换映射清单已保存到: {mapping_file}")
+            
+        except Exception as e:
+            logger.error(f"保存替换映射清单失败: {e}")
+    
+    def process_updates(self, summary: UpdateSummary) -> bool:
+        """
+        处理更新（下载资源和替换）
+        
+        参数:
+            summary: 更新摘要
+            
+        返回:
+            bool: 是否成功处理
+        """
+        logger.info("开始处理更新...")
+        
+        try:
+            # 如果版本有变化，执行完整替换流程
+            is_update_dir = False
+            if summary.version_changed:
+                logger.info("检测到版本更新，执行完整替换流程...")
+                
+                # 第一步：建立替换映射清单
+                logger.info("🔍 第一步：建立替换映射清单")
+                replace_tasks = self._build_replace_mapping()
+                
+                if not replace_tasks:
+                    logger.warning("没有找到需要替换的任务")
+                    return True
+                
+                # 保存清单到文件
+                self._save_replace_mapping(replace_tasks, "完整替换清单.json")
+                
+                # 输出清单摘要
+                logger.info("📋 替换任务摘要:")
+                executed_count = 0
+                for i, task in enumerate(replace_tasks, 1):
+                    status = "✅ 执行" if task.should_execute else "⏭️ 跳过"
+                    if task.should_execute:
+                        executed_count += 1
+                    
+                    logger.info(f"  {i}. {status} - {task.char}/{task.costume}/{task.type}")
+                    logger.info(f"     值: {task.idle_or_cutscene_value}")
+                    logger.info(f"     资源: {task.data_name}")
+                    logger.info(f"     Hash: {task.hash_id}")
+                    logger.info(f"     MOD名称: {task.mod_name}")
+                
+                logger.info(f"✅ 完整替换映射清单建立完成 (执行: {executed_count}/{len(replace_tasks)})")
+                
+            elif summary.replace_dirs_to_update:
+                is_update_dir = True
+                logger.info("检测到文件更新，处理增量替换...")
+                
+                # 建立增量替换映射清单
+                logger.info("🔍 建立增量替换映射清单")
+                replace_tasks = self._build_replace_mapping(summary.replace_dirs_to_update)
+                
+                if not replace_tasks:
+                    logger.warning("没有找到需要增量替换的任务")
+                    return True
+                
+                # 保存增量清单到文件
+                self._save_replace_mapping(replace_tasks, "增量替换清单.json")
+                
+                # 输出增量清单摘要
+                logger.info("📋 增量替换任务摘要:")
+                executed_count = 0
+                for i, task in enumerate(replace_tasks, 1):
+                    status = "✅ 执行" if task.should_execute else "⏭️ 跳过"
+                    if task.should_execute:
+                        executed_count += 1
+                    
+                    logger.info(f"  {i}. {status} - {task.char}/{task.costume}/{task.type}")
+                    logger.info(f"     值: {task.idle_or_cutscene_value}")
+                    logger.info(f"     资源: {task.data_name}")
+                    logger.info(f"     Hash: {task.hash_id}")
+                    logger.info(f"     MOD名称: {task.mod_name}")
+                
+                logger.info(f"✅ 增量替换映射清单建立完成 (执行: {executed_count}/{len(replace_tasks)})")
+            
+            # 第二步：下载资源文件
+            if not is_update_dir:
+                logger.info("📥 第二步：下载资源文件")
+                success = self._download_resources(replace_tasks)
+                if not success:
+                    logger.error("资源下载失败")
+                    return False
+            
+            # 第三步：执行Unity资源替换
+            logger.info("🔄 第三步：执行Unity资源替换")
+            success = self._process_unity_resources(replace_tasks, is_update_dir)
+            if not success:
+                logger.error("Unity资源替换失败")
+                return False
+            
+            # 第四步：生成README文件（包含所有任务信息）
+            logger.info("📝 第四步：生成README文件")
+            self._generate_all_readme_files(replace_tasks)
+            
+            logger.info("✅ 更新处理完成")
+            return True
+            
+        except Exception as e:
+            logger.error(f"处理更新失败: {e}")
+            return False
+    
+    def _download_resources(self, replace_tasks: List[ReplaceTask]) -> bool:
+        """
+        下载资源文件
+        
+        参数:
+            replace_tasks: 替换任务列表
+            
+        返回:
+            bool: 是否成功下载
+        """
+        try:
+            # 获取所有需要下载的资源（去重），只处理需要执行的任务
+            unique_resources = {}
+            executable_tasks = [task for task in replace_tasks if task.should_execute]
+            
+            for task in executable_tasks:
+                if task.data_name not in unique_resources:
+                    unique_resources[task.data_name] = task
+            
+            total_tasks = len(replace_tasks)
+            executable_count = len(executable_tasks)
+            logger.info(f"总任务数: {total_tasks}, 需要执行: {executable_count}, 需要下载 {len(unique_resources)} 个唯一资源文件")
+            
+            if not unique_resources:
+                logger.info("无需下载任何资源文件")
+                return True
+            
+            # 逐个下载
+            for i, (data_name, task) in enumerate(unique_resources.items(), 1):
+                logger.info(f"[{i}/{len(unique_resources)}] 下载: {data_name}")
+                
+                try:
+                    downloaded_path = self.data_downloader.download_data(data_name)
+                    logger.info(f"✅ 下载完成: {downloaded_path}")
+                except Exception as e:
+                    logger.error(f"❌ 下载失败 {data_name}: {e}")
+                    return False
+            
+            logger.info("🎉 所有资源下载完成")
+            return True
+            
+        except Exception as e:
+            logger.error(f"下载资源失败: {e}")
+            return False
+
+    def _process_unity_resources(self, replace_tasks: List[ReplaceTask], is_update_dir: bool) -> bool:
+        """
+        处理Unity资源替换
+        
+        参数:
+            replace_tasks: 替换任务列表
+            
+        返回:
+            bool: 是否成功处理
+        """
+        try:
+            # 按目标目录分组任务，只处理需要执行的任务
+            tasks_by_target = {}
+            executable_tasks = [task for task in replace_tasks if task.should_execute]
+            
+            for task in executable_tasks:
+                target_dir = task.target_dir
+                if target_dir not in tasks_by_target:
+                    tasks_by_target[target_dir] = []
+                tasks_by_target[target_dir].append(task)
+            
+            total_tasks = len(replace_tasks)
+            executable_count = len(executable_tasks)
+            logger.info(f"总任务数: {total_tasks}, 需要执行: {executable_count}, 需要处理 {len(tasks_by_target)} 个目标文件")
+            
+            if not tasks_by_target:
+                logger.info("无需处理任何Unity资源")
+                return True
+            
+            # 逐个处理目标文件
+            for i, (target_dir, group_tasks) in enumerate(tasks_by_target.items(), 1):
+                logger.info(f"[{i}/{len(tasks_by_target)}] 处理目标: {target_dir}")
+                
+                # 获取源bundle文件路径（使用第一个任务的信息）
+                first_task = group_tasks[0]
+                source_bundle_path = str(self.downloaded_dir / first_task.data_name / "__data")
+                if is_update_dir:
+                    source_bundle_path = str(self.project_root / target_dir)
+
+                # 收集所有替换目录
+                replace_dirs = [task.replace_dir for task in group_tasks]
+                
+                # 生成目标路径
+                target_path = str(self.project_root / target_dir)
+                
+                try:
+                    # 使用Unity处理器的多目录替换功能
+                    success = self.unity_processor.process_multiple_replace_dirs(
+                        bundle_path=source_bundle_path,
+                        replace_dirs=replace_dirs,
+                        target_path=target_path
+                    )
+                    
+                    if success:
+                        logger.info(f"✅ 处理完成: {target_dir}")
+                    else:
+                        logger.error(f"❌ 处理失败: {target_dir}")
+                        return False
+                        
+                except Exception as e:
+                    logger.error(f"❌ 处理失败 {target_dir}: {e}")
+                    return False
+            
+            logger.info("🎉 所有Unity资源处理完成")
+            return True
+            
+        except Exception as e:
+            logger.error(f"处理Unity资源失败: {e}")
+            return False
+    
+    def _generate_all_readme_files(self, replace_tasks: List[ReplaceTask]) -> None:
+        """
+        为所有目标目录生成README文件（包含所有任务信息，无论是否执行）
+        
+        参数:
+            replace_tasks: 所有替换任务列表
+        """
+        try:
+            # 按目标目录分组所有任务（包括不执行的）
+            tasks_by_target = {}
+            for task in replace_tasks:
+                target_dir = task.target_dir
+                if target_dir not in tasks_by_target:
+                    tasks_by_target[target_dir] = []
+                tasks_by_target[target_dir].append(task)
+            
+            logger.info(f"生成 {len(tasks_by_target)} 个README文件")
+            
+            # 为每个目标目录生成README
+            for target_dir, group_tasks in tasks_by_target.items():
+                target_path = str(self.project_root / target_dir)
+                self._create_mod_readme(target_path, group_tasks)
+            
+            logger.info("📝 所有README文件生成完成")
+            
+        except Exception as e:
+            logger.error(f"生成README文件失败: {e}")
+    
+    def _create_mod_readme(self, target_path: str, tasks: List[ReplaceTask]) -> None:
+        """
+        在目标目录创建README文件
+        
+        参数:
+            target_path: 目标路径
+            tasks: 相关的替换任务列表
+        """
+        try:
+            # 确保目标目录存在
+            Path(target_path).parent.mkdir(parents=True, exist_ok=True)
+            
+            readme_path = Path(target_path).parent / "README.txt"
+            
+            # 统计执行状态
+            executed_tasks = [task for task in tasks if task.should_execute]
+            skipped_tasks = [task for task in tasks if not task.should_execute]
+            
+            with open(readme_path, 'w', encoding='utf-8') as f:
+                f.write("BD2 MOD资源包\n")
+                f.write("=" * 30 + "\n\n")
+                f.write(f"生成时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"总MOD数量: {len(tasks)}\n")
+                f.write(f"已更新MOD: {len(executed_tasks)}\n")
+                f.write(f"未更改MOD: {len(skipped_tasks)}\n\n")
+
+                # 已更新的MOD
+                if executed_tasks:
+                    f.write("已更新的MOD:\n")
+                    f.write("-" * 20 + "\n")
+                    for i, task in enumerate(executed_tasks, 1):
+                        f.write(f"{i}. ✅ {task.mod_name}\n")
+                        f.write(f"   角色: {task.char}\n")
+                        f.write(f"   服装: {task.costume}\n")
+                        f.write(f"   类型: {task.type}\n")
+                        f.write(f"   替换目录: {task.replace_dir}\n\n")
+                
+                # 跳过的MOD
+                if skipped_tasks:
+                    f.write("未更改的MOD:\n")
+                    f.write("-" * 20 + "\n")
+                    for i, task in enumerate(skipped_tasks, 1):
+                        f.write(f"{i}. ⏭️ {task.mod_name}\n")
+                        f.write(f"   角色: {task.char}\n")
+                        f.write(f"   服装: {task.costume}\n")
+                        f.write(f"   类型: {task.type}\n")
+                        f.write(f"   替换目录: {task.replace_dir}\n")
+                        f.write(f"   原因: 目录未在更新列表中\n\n")
+                
+                f.write("使用说明:\n")
+                f.write("1. 将_data文件复制到游戏对应位置\n")
+                f.write("2. 确保文件路径结构正确\n")
+                f.write("3. 重新启动游戏以应用修改\n")
+                f.write("4. 跳过的MOD需要手动触发更新才会应用\n")
+            
+            logger.info(f"📝 已生成README文件: {readme_path}")
+            
+        except Exception as e:
+            logger.warning(f"创建README文件失败: {e}")
+    
+    def run(self) -> bool:
+        """
+        运行主流程
+        
+        返回:
+            bool: 是否成功执行
+        """
+        try:
+            logger.info("🎮 BD2资源替换工具启动")
+            logger.info("=" * 50)
+            
+            # 检测版本和更新
+            needs_update, summary = self.check_version_and_updates()
+            
+            # 输出检测结果
+            logger.info("📊 检测结果摘要:")
+            logger.info(f"  版本变化: {summary.version_changed}")
+            if summary.old_version is not None and summary.new_version is not None:
+                logger.info(f"  版本: {summary.old_version} -> {summary.new_version}")
+            logger.info(f"  总替换目录数: {summary.total_replace_dirs}")
+            logger.info(f"  需要更新的目录数: {len(summary.replace_dirs_to_update)}")
+            
+            if not needs_update:
+                logger.info("✅ 无需更新，程序退出")
+                return True
+            
+            logger.info("🔄 检测到更新，开始处理...")
+            
+            # 处理更新
+            success = self.process_updates(summary)
+            
+            if success:
+                logger.info("✅ 更新处理完成")
+            else:
+                logger.error("❌ 更新处理失败")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"主流程执行失败: {e}")
+            return False
+
+
+def main():
+    """主函数"""
+    try:
+        manager = BD2ResourceManager()
+        success = manager.run()
+        return 0 if success else 1
+    except KeyboardInterrupt:
+        logger.info("用户中断程序")
+        return 1
+    except Exception as e:
+        logger.error(f"程序异常退出: {e}")
+        return 1
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())

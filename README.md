@@ -1,16 +1,18 @@
-# 🎮 BD2 Auto AB - Brown Dust 2 自动化资源管理系统
+
 
 <div align="center">
+
+# 🎮 BD2 Auto AB - Brown Dust 2 自动化MOD打包系统
 
 ![BD2 Logo](https://img.shields.io/badge/BD2-MOD%20Manager-blue?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.8+-green?style=for-the-badge&logo=python)
 ![Status](https://img.shields.io/badge/Status-Active-success?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
 
-**🚀 一站式Brown Dust 2游戏资源管理和MOD制作工具**
+**🚀 一站式Brown Dust 2MOD制作工具**
 
 *自动化角色目录管理 | Unity资源替换 | 智能MOD打包*
-### 🌟 如果这个项目对您有帮助，请给我们一个Star！
+### 🌟 如果这个项目对您有帮助，请给我们一个Star或者[💕 赞助我们](#-支持我们)！
 
 [![GitHub stars](https://img.shields.io/github/stars/laoxinH/bd2_auto_ab?style=social)](https://github.com/laoxinH/bd2_auto_ab)
 [![GitHub forks](https://img.shields.io/github/forks/laoxinH/bd2_auto_ab?style=social)](https://github.com/laoxinH/bd2_auto_ab)

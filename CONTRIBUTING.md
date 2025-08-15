@@ -44,7 +44,7 @@
 
 1. **克隆项目**
    ```bash
-   git clone https://github.com/your-username/bd2_auto_ab.git
+   git clone https://github.com/laoxinH/bd2_auto_ab.git
    cd bd2_auto_ab
    ```
 
@@ -329,13 +329,11 @@ Pull Request会经过以下审查：
 - **次版本号**: 向下兼容的功能性新增
 - **修订号**: 向下兼容的问题修正
 
-## 📞 联系方式
 
 ### 💬 讨论渠道
 
 - **GitHub Issues**: 问题报告和功能建议
 - **GitHub Discussions**: 一般讨论和问答
-- **Email**: project@bd2autoab.com（计划中）
 
 ### 📚 学习资源
 

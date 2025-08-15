@@ -14,7 +14,7 @@
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/your-username/bd2_auto_ab.git
+git clone https://github.com/laoxinH/bd2_auto_ab.git
 cd bd2_auto_ab
 
 # 2. 安装依赖

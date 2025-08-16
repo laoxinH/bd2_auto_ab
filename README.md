@@ -2,24 +2,26 @@
 
 <div align="center">
 
-# 🎮 BD2 Auto AB - Brown Dust 2 自动化MOD打包系统
+# 🎮 BD2 MOD Packer v2.0 - Brown Dust 2 自动化MOD管理系统
 
 ![BD2 Logo](https://img.shields.io/badge/BD2-MOD%20Manager-blue?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.8+-green?style=for-the-badge&logo=python)
+![Version](https://img.shields.io/badge/Version-2.0.0-orange?style=for-the-badge)
 ![Status](https://img.shields.io/badge/Status-Active-success?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
 
-**🚀 一站式Brown Dust 2MOD制作工具**
+**🚀 全新架构的Brown Dust 2 MOD制作工具**
 
-*自动化角色目录管理 | Unity资源替换 | 智能MOD打包*
+*工作区集中管理 | 模块化架构 | 命令行/GUI双界面 | 一键打包部署*
+
 ### 🌟 如果这个项目对您有帮助，请给我们一个Star或者[💕 赞助我们](#-支持我们)！
 
 [![GitHub stars](https://img.shields.io/github/stars/laoxinH/bd2_auto_ab?style=social)](https://github.com/laoxinH/bd2_auto_ab)
 [![GitHub forks](https://img.shields.io/github/forks/laoxinH/bd2_auto_ab?style=social)](https://github.com/laoxinH/bd2_auto_ab)
 
-**🎮 让BD2 MOD制作变得简单而高效！**
+**🎮 让BD2 MOD制作变得专业而高效！**
 
-*Made with ❤️ by MOD实验室*
+*Made with ❤️ by BD2 MOD实验室*
 </div>
 
 ## 📋 目录
@@ -38,13 +40,22 @@
 
 ## 🎯 项目简介
 
-BD2 Auto AB 是一个专为《Brown Dust 2》游戏开发的自动化资源管理系统。它提供了从角色数据获取、目录结构初始化到MOD资源打包的完整自动化流程，让MOD制作变得简单高效。
+BD2 MOD Packer v2.0 是专为《Brown Dust 2》游戏开发的新一代自动化MOD管理系统。基于全新的工作区集中化架构，提供了从MOD开发到打包部署的完整工作流程。
+
+### 🚀 v2.0 重大更新
+
+- **🏗️ 工作区集中化**: 全新的 `workspace/` 目录结构，统一管理所有MOD项目
+- **📦 模块化重构**: 重新设计的 `bd2_mod_packer` 包架构，更好的代码组织
+- **🖥️ 双界面支持**: 命令行界面 + 控制台界面，适应不同用户需求
+- **⚙️ 统一配置**: 基于JSON的配置系统，所有设置集中管理
+- **🔧 Python包化**: 支持 `pip install` 安装，更专业的分发方式
 
 ### 🌟 核心价值
-- **自动化流程**: 一键完成从数据获取到MOD打包的全过程
-- **智能管理**: 自动检测更新、版本管理、智能缓存
-- **用户友好**: 统一控制台界面，无需复杂命令行操作
-- **高度可配置**: 灵活的配置系统，支持代理、超时等个性化设置
+
+- **专业化架构**: 采用现代Python项目标准架构，可维护性大大提升
+- **工作区管理**: 支持多作者、多项目的工作区独立管理
+- **智能处理**: 自动检测文件变更、智能缓存、版本管理
+- **用户友好**: 统一的控制台界面和详细的错误提示
 
 ## ✨ 主要特性
 
@@ -91,7 +102,7 @@ pip install -r requirements.txt
 
 # 启动控制台
 cd src
-python console.py
+python main.py
 ```
 
 ### 🎯 三步完成MOD制作
@@ -102,31 +113,51 @@ python console.py
 ## 💻 安装配置
 
 ### 🔧 系统要求
+
 - **Python**: 3.8 或更高版本
-- **操作系统**: Windows 10/11, macOS, Linux
+- **操作系统**: Windows 10/11 (主要支持)
 - **内存**: 建议 4GB 以上
-- **磁盘空间**: 至少 2GB 可用空间
-- **网络**: 稳定的互联网连接
+- **存储**: 建议 2GB 以上空闲空间
 
-### 📦 依赖安装
+### 📦 安装方式
 
-#### 方法一：自动安装（推荐）
+#### 方法一：直接使用（推荐）
+
 ```bash
+# 1. 克隆仓库
+git clone https://github.com/laoxinH/bd2_auto_ab.git
+cd bd2_auto_ab
+
+# 2. 安装依赖
 pip install -r requirements.txt
+
+# 3. 启动程序
+python main.py
 ```
 
-#### 方法二：手动安装
+### 🛠️ 环境配置
+
+#### 代理配置
+
+如果您处于需要代理的网络环境中，请修改 `config.json`：
+
+```json
+{
+  "network": {
+    "proxy_enabled": true,
+    "proxy_http": "http://your-proxy:port",
+    "proxy_https": "http://your-proxy:port"
+  }
+}
+```
+
+#### 依赖检查
+
+程序提供了自动依赖检查功能：
+
 ```bash
-pip install requests>=2.31.0
-pip install beautifulsoup4>=4.12.0
-pip install lxml>=4.9.0
-pip install tqdm>=4.65.0
-pip install UnityPy>=1.20.0
-pip install Pillow>=10.0.0
-pip install blackboxprotobuf>=1.0.0
+python main.py --check
 ```
-
-#### 方法三：使用国内镜像
 ```bash
 # 清华大学镜像源
 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
@@ -145,63 +176,98 @@ python console.py
 
 ## 🎮 使用指南
 
-### 🖥️ 统一控制台界面
+### 🖥️ 启动方式
 
-启动控制台后，您将看到以下主菜单：
+#### 方法一：控制台界面（推荐新用户）
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                          主菜单                             │
-├─────────────────────────────────────────────────────────────┤
-│  0️⃣  执行目录初始化 - 从谷歌表格创建角色目录结构           │
-│  1️⃣  执行MOD打包   - 检测更新并打包替换资源               │
-│  2️⃣  依赖环境检查 - 检查Python依赖库安装状态              │
-│  3️⃣  显示帮助信息 - 查看详细使用说明                      │
-│  4️⃣  退出程序     - 安全退出控制台                        │
-└─────────────────────────────────────────────────────────────┘
+```bash
+python main.py
 ```
 
-### 📁 目录结构说明
+#### 方法二：命令行模式（推荐高级用户）
 
-系统会自动创建以下标准化目录结构：
+```bash
+# 列出所有工作区
+python main.py --list
+
+# 创建新的工作区
+python main.py --create "我的MOD项目"
+
+# 打包指定工作区
+python main.py --workspace "我的MOD项目"
+
+# 清理空文件夹
+python main.py --cleanup
+
+# 检查依赖环境
+python main.py --check
+```
+
+### 📁 工作区结构说明
+
+v2.0 采用全新的工作区集中化管理：
 
 ```
 bd2_auto_ab/
-├── replace/                    # MOD替换文件目录
-│   ├── {角色名}/
-│   │   ├── {服装名}/
-│   │   │   ├── CUTSCENE/      # 技能动画资源
-│   │   │   │   └── {MOD名}/   # 您的MOD文件夹
-│   │   │   └── IDLE/          # 立绘动画资源
-│   │   │       └── {MOD名}/   # 您的MOD文件夹
-├── sourcedata/                 # 原始游戏资源缓存
-├── targetdata/                 # 处理后的MOD输出
-├── config.json                 # 配置文件
-└── requirements.txt           # 依赖清单
+├── workspace/                  # 🗂️ 工作区根目录
+│   ├── mod_projects/           # 📦 MOD项目目录
+│   │   ├── replace/            # 默认工作区
+│   │   ├── laoxin的mod/        # 示例：多作者工作区
+│   │   └── your_workspace/     # 您的自定义工作区
+│   ├── sourcedata/             # 📥 原始游戏资源缓存
+│   └── targetdata/             # 📤 处理后的MOD输出
+├── bd2_mod_packer/             # 🔧 核心程序包
+├── config.json                 # ⚙️ 配置文件
+└── main.py                     # 🚀 程序入口
 ```
 
-### � 完整工作流程
+### 🎯 完整工作流程
 
 #### 第一次使用
-1. **🚀 启动系统**
+
+1. **🚀 启动程序**
    ```bash
-   cd src
-   python console.py
+   python main.py
    ```
 
-2. **📋 初始化目录**
-   - 选择选项 `0`
-   - 系统自动从Google Sheets获取角色数据
-   - 创建完整的目录结构
+2. **0️⃣ 创建工作区**
+   - 选择菜单选项 "0" - 创建MOD工作目录
+   - 输入工作区名称（如 "我的MOD"）
+   - 系统自动创建标准目录结构
 
-3. **🔧 检查环境**
-   - 选择选项 `2`
-   - 验证所有依赖库安装状态
-   - 确保系统配置正确
+3. **� 放置MOD文件**
+   - 将您的MOD文件放入对应的工作区目录
+   - 系统支持角色/服装/类型的标准化管理
 
 #### 日常MOD制作
-1. **📁 放置MOD文件**
-   - 将您的MOD文件放入对应的角色/服装/类型目录
+
+1. **📁 管理MOD文件**
+   - 在 `workspace/mod_projects/your_workspace/` 中组织您的MOD
+   - 支持多个角色、服装的并行开发
+
+2. **📦 一键打包**
+   - 选择菜单选项 "1" - 执行MOD打包
+   - 选择要打包的工作区
+   - 系统自动处理并输出到 `targetdata/`
+
+3. **🧹 清理维护**
+   - 定期使用选项 "3" 清理空文件夹
+   - 保持工作区整洁
+
+#### 命令行快速操作
+
+对于熟练用户，可以直接使用命令行：
+
+```bash
+# 创建新工作区
+python main.py --create "新项目名称"
+
+# 列出所有工作区状态
+python main.py --list
+
+# 打包指定工作区
+python main.py --workspace "项目名称"
+```
    - 建议创建以MOD名称命名的子文件夹
 
 2. **📦 执行打包**
@@ -211,7 +277,7 @@ bd2_auto_ab/
    - 生成完整的MOD包和说明文档
 
 3. **📊 查看结果**
-   - 在 `targetdata/` 目录查看生成的MOD包
+   - 在 `workspace/targetdata/` 目录查看生成的MOD包
    - 阅读自动生成的README文件
    - 按说明安装和测试MOD
 
@@ -271,27 +337,59 @@ python config_manager.py
 
 ## 📁 项目结构
 
+BD2 MOD Packer v2.0 采用全新的工作区集中化架构：
+
 ```
-bd2_auto_ab/
-├── 📁 src/                     # 源代码目录
-│   ├── 🖥️ console.py           # 统一控制台主程序
-│   ├── ⚙️ config.py            # 配置管理系统
-│   ├── 🔧 config_manager.py    # 配置管理工具
-│   ├── 📋 initialize_directories.py  # 目录初始化器
-│   ├── 📦 main_program.py      # MOD打包主程序
-│   ├── 🌐 BD2CDNAPI.py         # BD2 CDN API接口
-│   ├── 📥 BD2DataDownloader.py # 数据下载器
-│   ├── 🎨 UnityResourceProcessor.py  # Unity资源处理器
-│   ├── 🕷️ CharacterScraper.py   # 角色数据抓取器
-│   └── 🔍 check_dependencies.py # 依赖检查工具
-├── 📁 replace/                 # MOD替换文件目录
-├── 📁 sourcedata/              # 原始游戏资源缓存
-├── 📁 targetdata/              # 处理后的MOD输出
-├── 📄 config.json              # 主配置文件
-├── 📄 requirements.txt         # Python依赖清单
-├── 📄 data.json                # 项目数据缓存
-└── 📄 README.md                # 项目说明文档
+bd2_auto_ab/                        # 项目根目录
+├── � main.py                      # 🎯 统一程序入口
+├── 📄 setup.py                     # 📦 Python包安装脚本
+├── 📄 config.json                  # ⚙️ 统一配置文件
+├── 📄 data.json                    # 📊 项目数据缓存
+├── � requirements.txt             # 📋 依赖列表
+│
+├── 📦 bd2_mod_packer/              # 🔧 主程序包
+│   ├── � core/                    # 核心业务逻辑
+│   │   ├── � manager.py           # MOD管理器主类
+│   │   ├── 📄 resource_manager.py  # 资源管理器
+│   │   ├── � data_downloader.py   # 数据下载器
+│   │   └── 📄 unity_processor.py   # Unity资源处理器
+│   ├── � ui/                      # 用户界面
+│   │   └── 📄 console.py           # 控制台界面
+│   ├── 📁 config/                  # 配置管理
+│   │   └── 📄 settings.py          # 配置设置
+│   ├── 📁 utils/                   # 工具函数
+│   │   └── � dependency_checker.py # 依赖检查器
+│   └── 📁 api/                     # API接口
+│       ├── 📄 cdn_api.py           # BD2 CDN API
+│       └── 📄 character_scraper.py # 角色数据爬虫
+│
+├── 📁 workspace/                   # 🗂️ 工作区目录（v2.0核心）
+│   ├── 📁 mod_projects/            # MOD项目工作区
+│   │   ├── 📁 replace/             # 默认工作区
+│   │   ├── 📁 laoxin的mod/         # 多作者工作区示例
+│   │   └── 📁 {自定义工作区}/      # 用户自定义工作区
+│   ├── 📁 sourcedata/              # 原始游戏资源缓存
+│   └── 📁 targetdata/              # 处理后的MOD输出
+│
+├── � docs/                        # 📚 文档目录
+│   ├── 📄 QUICKSTART.md            # 快速开始指南
+│   ├── 📄 PROJECT_STRUCTURE.md     # 项目架构说明
+│   ├── 📄 CONFIG_README.md         # 配置系统说明
+│   ├── 📄 CHANGELOG.md             # 更新日志
+│   └── 📄 PROJECT_OVERVIEW.md      # 项目概览
+│
+└── 📁 tests/                       # 🧪 测试文件
+    ├── 📄 test_console.py          # 控制台测试
+    └── 📄 test_new_features.py     # 新功能测试
 ```
+
+### 🔧 v2.0架构亮点
+
+- **🏗️ 工作区集中化**: workspace/ 统一管理所有MOD相关数据
+- **📦 Python包化**: 标准Python包结构，支持pip安装
+- **🔧 模块化设计**: 业务逻辑、界面、配置、工具清晰分离
+- **🎯 统一入口**: main.py 提供一致的程序访问点
+- **📊 多工作区支持**: 支持多个独立MOD项目并行开发
 
 ## 🔧 开发者指南
 

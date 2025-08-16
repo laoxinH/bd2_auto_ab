@@ -19,9 +19,11 @@ import os
 import sys
 from pathlib import Path
 from typing import Optional
-
+# 添加项目根目录到Python路径
+PROJECT_ROOT = Path(__file__).parent
+sys.path.insert(0, str(PROJECT_ROOT))
 # 导入配置模块
-from config import get_config, reload_config
+from bd2_mod_packer.config import get_config, reload_config
 
 
 class ConfigManager:

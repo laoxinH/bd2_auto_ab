@@ -11,7 +11,6 @@ BD2 CDN基础设施交互API类。
 
 import base64
 import logging
-import os
 import time
 from typing import Tuple, Optional, Dict, Any
 from dataclasses import dataclass

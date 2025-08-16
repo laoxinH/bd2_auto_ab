@@ -37,7 +37,7 @@ from bs4 import BeautifulSoup, Tag
 
 # 导入配置
 try:
-    from config import get_config
+    from ..config import get_config
     _config_available = True
 except ImportError:
     _config_available = False
@@ -103,8 +103,9 @@ class CharacterScraper:
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
         )
-        
+
         # 设置代理
+        # 设置代理配置
         if proxies is not None:
             self.proxies = proxies
         elif _config_available:
@@ -113,6 +114,8 @@ class CharacterScraper:
             self.proxies = config.get_proxies()
         else:
             self.proxies = None
+
+
 
     @lru_cache(maxsize=4)
     def fetch_html(self) -> str:

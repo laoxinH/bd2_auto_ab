@@ -3,14 +3,20 @@
 BD2 目录初始化脚本
 
 从谷歌表格获取角色数据，自动创建replace目录结构。
-目录格式: replace\\{Character}\\{Costume}\\{Type}
+目录格式: {replace_dir}\\{Character}\\{Costume}\\{Type}
 
 支持的类型:
 - CUTSCENE: 技能动画资源
 - IDLE: 待机动画资源
 
-使用示例:
-    python initialize_directories.py
+使用方法:
+    python initialize_directories.py [replace_dir]
+    
+参数说明:
+    replace_dir: 可选，指定替换目录名称（相对于项目根目录）
+                默认为 'replace'
+                例如: python initialize_directories.py "laoxin的mod"
+                     将使用 '项目根目录/laoxin的mod' 作为替换目录
     
 功能特性:
 - 🌐 从谷歌表格获取最新角色数据
@@ -18,14 +24,16 @@ BD2 目录初始化脚本
 - 🔍 智能跳过已存在的目录
 - 📊 显示创建统计信息
 - 🛡️ 完善的错误处理
+- 🎯 支持自定义替换目录名称
 """
 
+import argparse
 import os
 import sys
 from pathlib import Path
 from typing import Set, Tuple
 import logging
-from CharacterScraper import CharacterScraper, CharacterData
+from ..api import CharacterScraper, CharacterData
 
 # 导入配置
 try:
@@ -49,17 +57,19 @@ class DirectoryInitializer:
     
     功能：
     - 从谷歌表格获取角色数据
-    - 创建replace目录结构
+    - 创建替换目录结构
     - 支持IDLE和CUTSCENE类型
     - 智能跳过已存在目录
+    - 支持自定义替换目录名称
     """
     
-    def __init__(self, project_root: str = None):
+    def __init__(self, project_root: str = None, replace_dir: str = "replace"):
         """
         初始化目录创建器
         
         Args:
             project_root: 项目根目录路径，如果不提供则自动检测
+            replace_dir: 替换目录名称，相对于项目根目录，默认为"replace"
         """
         if project_root is None:
             # 自动检测项目根目录
@@ -67,7 +77,8 @@ class DirectoryInitializer:
             project_root = current_dir.parent
             
         self.project_root = Path(project_root)
-        self.replace_root = self.project_root / "replace"
+        self.replace_root = self.project_root / replace_dir
+        self.replace_dir_name = replace_dir  # 保存目录名称用于显示
         
         # 创建CharacterScraper实例，会自动使用配置文件中的代理设置
         if _config_available:
@@ -77,15 +88,15 @@ class DirectoryInitializer:
             self.scraper = CharacterScraper()
         
         logger.info(f"项目根目录: {self.project_root}")
-        logger.info(f"替换目录根路径: {self.replace_root}")
+        logger.info(f"替换目录根路径: {self.replace_root} (目录名: {self.replace_dir_name})")
     
     def ensure_replace_root(self) -> None:
-        """确保replace根目录存在"""
+        """确保替换目录根目录存在"""
         if not self.replace_root.exists():
             self.replace_root.mkdir(parents=True, exist_ok=True)
-            logger.info(f"创建replace根目录: {self.replace_root}")
+            logger.info(f"创建替换目录根目录: {self.replace_root}")
         else:
-            logger.info(f"replace根目录已存在: {self.replace_root}")
+            logger.info(f"替换目录根目录已存在: {self.replace_root}")
     
     def sanitize_name(self, name: str) -> str:
         """
@@ -237,10 +248,10 @@ class DirectoryInitializer:
         列出已存在的目录结构
         """
         if not self.replace_root.exists():
-            logger.info("replace目录不存在")
+            logger.info(f"{self.replace_dir_name}目录不存在")
             return
         
-        logger.info("📋 当前目录结构:")
+        logger.info(f"📋 当前{self.replace_dir_name}目录结构:")
         
         count = 0
         for character_dir in sorted(self.replace_root.iterdir()):
@@ -264,11 +275,72 @@ class DirectoryInitializer:
         logger.info(f"总计: {count} 个角色/服装组合")
 
 
+def parse_arguments():
+    """解析命令行参数"""
+    parser = argparse.ArgumentParser(
+        description='BD2目录初始化脚本',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+使用示例:
+  python initialize_directories.py                    # 使用默认的 'replace' 目录
+  python initialize_directories.py "laoxin的mod"     # 使用 'laoxin的mod' 目录
+  python initialize_directories.py "author_name"     # 使用 'author_name' 目录
+
+说明:
+  - 指定的目录相对于项目根目录
+  - 如果目录不存在，程序会自动创建
+  - 支持包含中文和空格的目录名
+        """
+    )
+    
+    parser.add_argument(
+        'replace_dir',
+        nargs='?',
+        default='replace',
+        help='替换目录名称（相对于项目根目录，默认: replace）'
+    )
+    
+    return parser.parse_args()
+
+
+def validate_replace_directory(replace_dir):
+    """验证并准备替换目录"""
+    # 获取项目根目录（initialize_directories.py的上级目录）
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(current_dir)
+    replace_path = os.path.join(project_root, replace_dir)
+    
+    # 与main_program.py不同，这里我们准备创建目录，所以不需要检查目录是否存在
+    logger.info(f"✅ 将使用替换目录: {replace_path}")
+    if os.path.exists(replace_path):
+        if os.path.isdir(replace_path):
+            logger.info(f"📁 目录已存在，将在其中创建角色结构")
+        else:
+            logger.error(f"❌ 指定的路径不是目录: {replace_path}")
+            return False, None
+    else:
+        logger.info(f"📁 目录不存在，将自动创建")
+    
+    return True, replace_path
+
+
 def main():
     """主函数"""
     try:
-        # 创建初始化器
-        initializer = DirectoryInitializer()
+        # 解析命令行参数
+        args = parse_arguments()
+        
+        logger.info("🚀 BD2目录初始化脚本启动")
+        logger.info("=" * 60)
+        logger.info(f"📁 指定的替换目录: {args.replace_dir}")
+        
+        # 验证替换目录
+        is_valid, replace_path = validate_replace_directory(args.replace_dir)
+        if not is_valid:
+            return 1
+        
+        # 创建初始化器，传入自定义的替换目录名称
+        initializer = DirectoryInitializer(replace_dir=args.replace_dir)
         
         # 显示当前目录结构
         initializer.list_existing_directories()
@@ -281,11 +353,14 @@ def main():
         initializer.list_existing_directories()
         
     except KeyboardInterrupt:
-        logger.info("用户中断操作")
+        logger.info("⚠️ 用户中断操作")
+        return 1
     except Exception as e:
-        logger.error(f"程序执行失败: {e}")
-        sys.exit(1)
+        logger.error(f"💥 程序执行失败: {e}")
+        return 1
+    
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

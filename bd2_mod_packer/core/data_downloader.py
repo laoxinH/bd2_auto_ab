@@ -15,7 +15,7 @@ from typing import Optional
 import requests
 import tqdm
 
-from BD2CDNAPI import BD2CDNAPI, BD2CDNAPIError
+from ..api import BD2CDNAPI, BD2CDNAPIError
 
 
 # 设置日志
@@ -104,9 +104,16 @@ class BD2DataDownloader:
             # 准备输出路径
             output_path = os.path.join(self.output_dir, data_name, "__data")
             
-            # 检查文件是否已存在
+            # 检查文件是否已存在，如果存在且大小一致则跳过下载
             if os.path.exists(output_path):
-                logger.info(f"文件已存在，将直接覆盖: {output_path}")
+                local_size = os.path.getsize(output_path)
+                server_size = resource_info.size
+                
+                if local_size == server_size:
+                    logger.info(f"文件已存在且大小一致({local_size} 字节)，跳过下载: {output_path}")
+                    return output_path
+                else:
+                    logger.info(f"文件已存在但大小不一致(本地:{local_size}, 服务器:{server_size})，将重新下载: {output_path}")
             
             # 如需要则创建目录
             os.makedirs(os.path.dirname(output_path), exist_ok=True)

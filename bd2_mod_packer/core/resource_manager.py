@@ -20,10 +20,11 @@ from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
 
 # 导入项目模块
-from BD2CDNAPI import BD2CDNAPI
-from BD2DataDownloader import BD2DataDownloader
-from UnityResourceProcessor import UnityResourceProcessor  
-from CharacterScraper import CharacterScraper
+from ..config.settings import BD2Config
+from ..api import BD2CDNAPI
+from .data_downloader import BD2DataDownloader
+from .unity_processor import UnityResourceProcessor
+from ..api import CharacterScraper
 
 # 配置日志
 logging.basicConfig(
@@ -78,24 +79,31 @@ class UpdateSummary:
 class BD2ResourceManager:
     """BD2资源管理器主控制器"""
     
-    def __init__(self, project_root: str = None, proxies : Optional[Dict[str, str]] = None):
+    def __init__(self, project_root: str = None, proxies : Optional[Dict[str, str]] = None, replace_dir: str = "replace"):
         """
         初始化BD2资源管理器
         
         参数:
             project_root: 项目根目录，默认为当前脚本的上级目录
+            proxies: 代理设置
+            replace_dir: 替换目录名称，相对于项目根目录，默认为"replace"
         """
+        # 初始化配置系统
+        self.config = BD2Config()
+        
         if project_root is None:
             # 获取项目根目录（main_v2.py的上级目录）
             current_file = Path(__file__).resolve()
-            self.project_root = current_file.parent.parent
+            self.project_root = current_file.parent.parent.parent
         else:
             self.project_root = Path(project_root)
         
         self.data_json_path = self.project_root / "data.json"
-        self.replace_dir = self.project_root / "replace"
-        self.downloaded_dir = self.project_root / "sourcedata"
-        self.target_dir = self.project_root / "target"
+        # 使用workspace路径
+        self.replace_dir = self.config.get_mod_workspace_path(replace_dir)
+        self.replace_dir_name = replace_dir  # 保存目录名称用于data.json键值
+        self.downloaded_dir = self.config.get_sourcedata_dir()
+        self.target_dir = self.config.get_targetdata_dir() / replace_dir  # 为每个作者创建独立的target子目录
         
         # 初始化组件
         self.cdn_api = BD2CDNAPI(proxies=proxies)
@@ -104,6 +112,7 @@ class BD2ResourceManager:
         self.data_downloader = BD2DataDownloader(output_dir=str(self.downloaded_dir),proxies=proxies)
         
         logger.info(f"BD2资源管理器初始化完成，项目根目录: {self.project_root}")
+        logger.info(f"使用替换目录: {self.replace_dir} (键值: {self.replace_dir_name})")
     
     def _load_data_json(self) -> Dict[str, Any]:
         """
@@ -115,23 +124,65 @@ class BD2ResourceManager:
         if not self.data_json_path.exists():
             logger.info("data.json不存在，将创建默认配置")
             return {
-                "version": 0,
-                "updateTime": 0,
-                "replaceDir": []
+                "authors": {}  # 改为按作者分组的结构，移除全局版本信息
             }
         
         try:
             with open(self.data_json_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                logger.info(f"成功加载data.json，当前版本: {data.get('version', 0)}")
+                
+                # 兼容旧格式：如果发现旧的replaceDir字段，进行迁移
+                if "replaceDir" in data and "authors" not in data:
+                    logger.info("检测到旧格式data.json，正在迁移到新格式...")
+                    old_replace_dirs = data.pop("replaceDir", [])
+                    old_version = data.pop("version", 0)
+                    old_update_time = data.pop("updateTime", 0)
+                    data["authors"] = {
+                        "replace": {
+                            "version": old_version,
+                            "updateTime": old_update_time,
+                            "dirs": old_replace_dirs
+                        }
+                    }
+                    # 保存迁移后的数据
+                    self._save_data_json(data)
+                    logger.info("data.json格式迁移完成")
+                elif "authors" not in data:
+                    data["authors"] = {}
+                
+                # 迁移旧的authors格式（数组格式）到新格式（对象格式）
+                authors_data = data.get("authors", {})
+                migration_needed = False
+                for author_name, author_data in list(authors_data.items()):
+                    if isinstance(author_data, list):  # 旧格式：直接是目录数组
+                        logger.info(f"迁移作者'{author_name}'数据到新格式...")
+                        old_version = data.get("version", 0)
+                        old_update_time = data.get("updateTime", 0)
+                        authors_data[author_name] = {
+                            "version": old_version,
+                            "updateTime": old_update_time,
+                            "dirs": author_data
+                        }
+                        migration_needed = True
+                
+                if migration_needed:
+                    # 清理全局版本信息
+                    data.pop("version", None)
+                    data.pop("updateTime", None)
+                    data["authors"] = authors_data
+                    self._save_data_json(data)
+                    logger.info("作者数据格式迁移完成")
+                
+                # 获取当前作者的版本信息
+                current_author = authors_data.get(self.replace_dir_name, {})
+                current_version = current_author.get("version", 0)
+                logger.info(f"成功加载data.json，作者'{self.replace_dir_name}'当前版本: {current_version}")
                 return data
         except Exception as e:
             logger.error(f"加载data.json失败: {e}")
             logger.info("使用默认配置")
             return {
-                "version": 0,
-                "updateTime": 0,
-                "replaceDir": []
+                "authors": {}
             }
     
     def _save_data_json(self, data: Dict[str, Any]) -> None:
@@ -144,7 +195,10 @@ class BD2ResourceManager:
         try:
             with open(self.data_json_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=4, ensure_ascii=False)
-            logger.info(f"成功保存data.json，版本: {data.get('version', 0)}")
+            # 获取当前作者的版本信息用于日志
+            current_author = data.get("authors", {}).get(self.replace_dir_name, {})
+            current_version = current_author.get("version", 0)
+            logger.info(f"成功保存data.json，作者'{self.replace_dir_name}'版本: {current_version}")
         except Exception as e:
             logger.error(f"保存data.json失败: {e}")
             raise
@@ -270,8 +324,12 @@ class BD2ResourceManager:
         
         # 加载当前配置
         data = self._load_data_json()
-        current_version = data.get("version", 0)
-        current_update_time = data.get("updateTime", 0)
+        
+        # 获取当前作者的数据
+        authors_data = data.get("authors", {})
+        current_author_data = authors_data.get(self.replace_dir_name, {})
+        current_version = current_author_data.get("version", 0)
+        current_update_time = current_author_data.get("updateTime", 0)
         
         # 创建更新摘要
         summary = UpdateSummary()
@@ -289,25 +347,36 @@ class BD2ResourceManager:
             summary.new_version = server_version
             
             if server_version != current_version or server_update_time != current_update_time:
-                logger.info(f"游戏版本有更新: {current_version} -> {server_version}")
+                logger.info(f"作者'{self.replace_dir_name}'游戏版本有更新: {current_version} -> {server_version}")
                 summary.version_changed = True
                 needs_update = True
                 
-                # 更新版本信息
-                data["version"] = server_version
-                data["updateTime"] = server_update_time
+                # 更新当前作者的版本信息
+                if self.replace_dir_name not in authors_data:
+                    authors_data[self.replace_dir_name] = {}
+                authors_data[self.replace_dir_name]["version"] = server_version
+                authors_data[self.replace_dir_name]["updateTime"] = server_update_time
+                
+                # 保持现有的dirs数据
+                if "dirs" not in authors_data[self.replace_dir_name]:
+                    authors_data[self.replace_dir_name]["dirs"] = []
+                
+                data["authors"] = authors_data
                 self._save_data_json(data)
             else:
-                logger.info("游戏版本无变化")
+                logger.info(f"作者'{self.replace_dir_name}'游戏版本无变化")
             
             # 第二步：建立replace_update清单
             logger.info("检测替换文件更新...")
             current_replace_dirs = self._scan_replace_directories()
             summary.total_replace_dirs = len(current_replace_dirs)
             
+            # 获取当前作者的目录数据
+            current_author_dirs = current_author_data.get("dirs", [])
+            
             # 构建现有replaceDir映射
             existing_replace_map = {}
-            for entry in data.get("replaceDir", []):
+            for entry in current_author_dirs:
                 # 将绝对路径转换为相对路径进行比较
                 rel_path = Path(entry["path"]).relative_to(self.project_root)
                 existing_replace_map[str(rel_path)] = entry
@@ -371,15 +440,25 @@ class BD2ResourceManager:
                     "subfile": current_subfiles
                 })
             
-            # 检查已删除的目录
+            # 检查已删除的目录（只检查当前作者的目录）
             for existing_rel_path in existing_replace_map:
                 if existing_rel_path not in current_replace_dirs:
                     logger.info(f"目录已删除: {existing_rel_path}")
                     needs_update = True
             
-            # 更新data.json中的replaceDir
+            # 更新data.json中的当前作者数据
             if needs_update:
-                data["replaceDir"] = updated_replace_dirs
+                # 确保当前作者的数据结构正确
+                if self.replace_dir_name not in authors_data:
+                    authors_data[self.replace_dir_name] = {
+                        "version": current_version,
+                        "updateTime": current_update_time,
+                        "dirs": []
+                    }
+                
+                # 更新目录信息，保持版本信息
+                authors_data[self.replace_dir_name]["dirs"] = updated_replace_dirs
+                data["authors"] = authors_data
                 self._save_data_json(data)
             
             summary.replace_dirs_to_update = dirs_to_update
@@ -418,9 +497,6 @@ class BD2ResourceManager:
             specific_dirs_set = set()
             if specific_dirs:
                 for dir_path in specific_dirs:
-                    # 确保路径以replace开头的相对路径格式
-                    if not dir_path.startswith("replace"):
-                        dir_path = f"replace/{dir_path}"
                     specific_dirs_set.add(dir_path.replace("\\", "/"))
             
             # 处理所有目录，无论是否指定了特定目录
@@ -457,7 +533,6 @@ class BD2ResourceManager:
                             current_dir_rel = type_dir.relative_to(self.project_root)
                             current_dir_rel_str = str(current_dir_rel).replace("\\", "/")
                             should_execute = current_dir_rel_str in specific_dirs_set
-                            
                             if should_execute:
                                 logger.info(f"      ✓ 目录在更新列表中: {char}/{costume}/{type_name}")
                             else:
@@ -467,11 +542,30 @@ class BD2ResourceManager:
                         if task:
                             replace_tasks.append(task)
             
+            # 如果是增量更新，需要额外处理相同目标路径的任务
+            if specific_dirs:
+                # 收集所有可执行任务的目标路径
+                executable_target_dirs = set()
+                for task in replace_tasks:
+                    if task.should_execute:
+                        executable_target_dirs.add(task.target_dir)
+                
+                # 标记具有相同目标路径的其他任务为可执行
+                additional_count = 0
+                for task in replace_tasks:
+                    if not task.should_execute and task.target_dir in executable_target_dirs:
+                        task.should_execute = True
+                        additional_count += 1
+                        logger.info(f"      ✓ 相同目标路径，标记为可执行: {task.char}/{task.costume}/{task.type}")
+                
+                if additional_count > 0:
+                    logger.info(f"因相同目标路径额外标记 {additional_count} 个任务为可执行")
+            
             # 统计任务数量
             execute_count = sum(1 for task in replace_tasks if task.should_execute)
             total_count = len(replace_tasks)
-            
             logger.info(f"替换映射清单建立完成，共 {total_count} 个任务，其中 {execute_count} 个需要执行")
+
             return replace_tasks
             
         except Exception as e:
@@ -585,7 +679,7 @@ class BD2ResourceManager:
         except Exception as e:
             logger.error(f"保存替换映射清单失败: {e}")
     
-    def process_updates(self, summary: UpdateSummary) -> bool:
+    def process_updates(self, summary: UpdateSummary) -> Tuple[bool, list[ReplaceTask]]:
         """
         处理更新（下载资源和替换）
         
@@ -593,7 +687,7 @@ class BD2ResourceManager:
             summary: 更新摘要
             
         返回:
-            bool: 是否成功处理
+            Tuple[bool, List[ReplaceTask]]: (是否成功处理, 替换任务列表)
         """
         logger.info("开始处理更新...")
         
@@ -609,10 +703,10 @@ class BD2ResourceManager:
                 
                 if not replace_tasks:
                     logger.warning("没有找到需要替换的任务")
-                    return True
+                    return True,replace_tasks
                 
                 # 保存清单到文件
-                self._save_replace_mapping(replace_tasks, "完整替换清单.json")
+                # self._save_replace_mapping(replace_tasks, "完整替换清单.json")
                 
                 # 输出清单摘要
                 logger.info("📋 替换任务摘要:")
@@ -627,6 +721,9 @@ class BD2ResourceManager:
                     logger.info(f"     资源: {task.data_name}")
                     logger.info(f"     Hash: {task.hash_id}")
                     logger.info(f"     MOD名称: {task.mod_name}")
+                    if executed_count == 0:
+                        logger.info("✅ 没有需要执行的替换任务")
+                        return True,replace_tasks
                 
                 logger.info(f"✅ 完整替换映射清单建立完成 (执行: {executed_count}/{len(replace_tasks)})")
                 
@@ -640,10 +737,10 @@ class BD2ResourceManager:
                 
                 if not replace_tasks:
                     logger.warning("没有找到需要增量替换的任务")
-                    return True
+                    return True,replace_tasks
                 
                 # 保存增量清单到文件
-                self._save_replace_mapping(replace_tasks, "增量替换清单.json")
+                # self._save_replace_mapping(replace_tasks, "增量替换清单.json")
                 
                 # 输出增量清单摘要
                 logger.info("📋 增量替换任务摘要:")
@@ -658,8 +755,15 @@ class BD2ResourceManager:
                     logger.info(f"     资源: {task.data_name}")
                     logger.info(f"     Hash: {task.hash_id}")
                     logger.info(f"     MOD名称: {task.mod_name}")
+                    if executed_count == 0:
+                        logger.info("✅ 没有需要执行的替换任务")
+                        return True,replace_tasks
                 
                 logger.info(f"✅ 增量替换映射清单建立完成 (执行: {executed_count}/{len(replace_tasks)})")
+                # if executed_count == 0:
+                #     logger.info("✅ 没有需要执行的增量替换任务")
+                #     return True,replace_tasks
+
             
             # 第二步：下载资源文件
             if not is_update_dir:
@@ -667,25 +771,25 @@ class BD2ResourceManager:
                 success = self._download_resources(replace_tasks)
                 if not success:
                     logger.error("资源下载失败")
-                    return False
+                    return False,replace_tasks
             
             # 第三步：执行Unity资源替换
             logger.info("🔄 第三步：执行Unity资源替换")
             success = self._process_unity_resources(replace_tasks, is_update_dir)
             if not success:
                 logger.error("Unity资源替换失败")
-                return False
+                return False,replace_tasks
             
             # 第四步：生成README文件（包含所有任务信息）
             logger.info("📝 第四步：生成README文件")
             self._generate_all_readme_files(replace_tasks)
             
             logger.info("✅ 更新处理完成")
-            return True
+            return True,replace_tasks
             
         except Exception as e:
             logger.error(f"处理更新失败: {e}")
-            return False
+            return False,replace_tasks
     
     def _download_resources(self, replace_tasks: List[ReplaceTask]) -> bool:
         """
@@ -768,9 +872,6 @@ class BD2ResourceManager:
                 # 获取源bundle文件路径（使用第一个任务的信息）
                 first_task = group_tasks[0]
                 source_bundle_path = str(self.downloaded_dir / first_task.data_name / "__data")
-                if is_update_dir:
-                    source_bundle_path = str(self.project_root / target_dir)
-
                 # 收集所有替换目录
                 replace_dirs = [task.replace_dir for task in group_tasks]
                 

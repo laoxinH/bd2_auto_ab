@@ -75,6 +75,14 @@ class ProjectConfig:
     
     # 并发设置
     max_workers: int = 4
+    
+    # MOD工作目录设置
+    mod_workspaces: list = None  # MOD工作目录列表
+    
+    def __post_init__(self):
+        """初始化后处理"""
+        if self.mod_workspaces is None:
+            self.mod_workspaces = ["replace"]  # 默认工作目录
 
 
 class BD2Config:
@@ -87,7 +95,7 @@ class BD2Config:
         Args:
             config_file: 配置文件路径，如果不提供则使用默认路径
         """
-        self.project_root = Path(__file__).parent.parent
+        self.project_root = Path(__file__).parent.parent.parent
         self.config_file = Path(config_file) if config_file else self.project_root / "config.json"
         
         # 默认配置
@@ -249,6 +257,121 @@ class BD2Config:
             "api": asdict(self.api),
             "project": asdict(self.project)
         }
+    
+    def add_mod_workspace(self, workspace_name: str) -> bool:
+        """
+        添加MOD工作目录
+        
+        Args:
+            workspace_name: 工作目录名称
+            
+        Returns:
+            是否添加成功
+        """
+        if workspace_name in self.project.mod_workspaces:
+            return False
+        
+        self.project.mod_workspaces.append(workspace_name)
+        self.save_config()
+        
+        if hasattr(self, 'logger'):
+            self.logger.info(f"已添加MOD工作目录: {workspace_name}")
+        
+        return True
+    
+    def remove_mod_workspace(self, workspace_name: str) -> bool:
+        """
+        移除MOD工作目录
+        
+        Args:
+            workspace_name: 工作目录名称
+            
+        Returns:
+            是否移除成功
+        """
+        if workspace_name not in self.project.mod_workspaces:
+            return False
+        
+        # 保留至少一个工作目录
+        if len(self.project.mod_workspaces) <= 1:
+            return False
+        
+        self.project.mod_workspaces.remove(workspace_name)
+        self.save_config()
+        
+        if hasattr(self, 'logger'):
+            self.logger.info(f"已移除MOD工作目录: {workspace_name}")
+        
+        return True
+    
+    def get_mod_workspaces(self) -> list:
+        """
+        获取所有MOD工作目录
+        
+        Returns:
+            工作目录列表
+        """
+        return self.project.mod_workspaces.copy()
+    
+    def workspace_exists(self, workspace_name: str) -> bool:
+        """
+        检查工作目录是否存在于配置中
+        
+        Args:
+            workspace_name: 工作目录名称
+            
+        Returns:
+            是否存在
+        """
+        return workspace_name in self.project.mod_workspaces
+    
+    def get_workspace_root(self) -> Path:
+        """
+        获取工作区根目录
+        
+        Returns:
+            工作区根目录路径
+        """
+        return self.project_root / "workspace"
+    
+    def get_mod_projects_dir(self) -> Path:
+        """
+        获取MOD项目目录
+        
+        Returns:
+            MOD项目目录路径
+        """
+        return self.get_workspace_root() / "mod_projects"
+    
+    def get_sourcedata_dir(self) -> Path:
+        """
+        获取源数据目录
+        
+        Returns:
+            源数据目录路径
+        """
+        return self.get_workspace_root() / "sourcedata"
+    
+    def get_targetdata_dir(self) -> Path:
+        """
+        获取目标数据目录
+        
+        Returns:
+            目标数据目录路径
+        """
+        return self.get_workspace_root() / "targetdata"
+    
+    def get_mod_workspace_path(self, workspace_name: str) -> Path:
+        """
+        获取指定MOD工作区的完整路径
+        
+        Args:
+            workspace_name: 工作区名称
+            
+        Returns:
+            工作区完整路径
+        """
+        return self.get_mod_projects_dir() / workspace_name
 
 
 # 全局配置实例

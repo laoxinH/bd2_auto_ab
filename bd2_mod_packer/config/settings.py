@@ -30,8 +30,8 @@ class NetworkConfig:
     """网络配置"""
     # 代理设置
     proxy_enabled: bool = True
-    proxy_http: str = "http://192.168.1.220:7897"
-    proxy_https: str = "http://192.168.1.220:7897"
+    proxy_http: str = ""
+    proxy_https: str = ""
     
     # 超时设置
     request_timeout: float = 15.0
@@ -68,7 +68,7 @@ class ProjectConfig:
     """项目配置"""
     # 目录设置
     project_name: str = "BD2 Auto AB"
-    version: str = "1.0.0"
+    version: str = "2.0.0"
     
     # Unity设置
     unity_version: str = "2022.3.22f1"
@@ -197,7 +197,10 @@ class BD2Config:
         """
         if not self.network.proxy_enabled:
             return None
-        
+
+        if self.network.proxy_http == "" and self.network.proxy_https == "":
+            return None
+
         return {
             'http': self.network.proxy_http,
             'https': self.network.proxy_https

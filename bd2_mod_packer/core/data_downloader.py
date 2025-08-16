@@ -32,10 +32,7 @@ try:
 except ImportError:
     _config_available = False
     # 如果配置模块不可用，提供默认代理配置
-    DEFAULT_PROXIES = {
-        'http': 'http://192.168.1.220:7897',
-        'https': 'http://192.168.1.220:7897',
-    }
+    DEFAULT_PROXIES = None
 
 
 class BD2DataDownloader:

@@ -101,7 +101,6 @@ cd bd2_auto_ab
 pip install -r requirements.txt
 
 # 启动控制台
-cd src
 python main.py
 ```
 

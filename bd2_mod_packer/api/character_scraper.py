@@ -6,7 +6,18 @@ Brown Dust 2 Character Idle Scraper
 支持直接从网站获取数据，也支持解析本地HTML文件。
 
 使用示例:
-    from character_idle_scraper import CharacterIdleScraper
+    from character_idle_scraper                            # 这是一个被rowspan影响的行，使用当前角色信息
+                            if id_or_costume.startswith(('char', 'illust_', 'specialIllust', 'specialillust')):
+                                # 这行有新的ID，说明是同一角色的不同服装变体
+                                current_char_id = id_or_costume.strip()
+                                costume = costume_or_idle.strip()
+                                idle = idle_or_cutscene.strip()
+                                cutscene = cutscene_or_next.strip()
+                            else:
+                                # 普通的服装行
+                                costume = id_or_costume.strip()
+                                idle = costume_or_idle.strip()
+                                cutscene = idle_or_cutscene.strip()acterIdleScraper
     
     # 创建scraper实例
     scraper = CharacterIdleScraper()
@@ -68,10 +79,11 @@ class CharacterData:
     character: str
     costume: str
     idle: str
-    cutscene: str = ""  # 新增cutscene字段
+    cutscene: str = ""  # cutscene字段
+    char_id: str = ""  # 角色ID字段 (如: char000101)
 
     def __str__(self):
-        return f"Character: '{self.character}', Costume: '{self.costume}', Idle: '{self.idle}', Cutscene: '{self.cutscene}'"
+        return f"Character: '{self.character}', Costume: '{self.costume}', ID: '{self.char_id}', Idle: '{self.idle}', Cutscene: '{self.cutscene}'"
 
 
 class CharacterScraper:
@@ -170,34 +182,57 @@ class CharacterScraper:
                 # 构建考虑rowspan的表格矩阵
                 matrix = self._build_table_matrix(trs[2:])  # 跳过表头和空行
                 
-                # 从矩阵中提取数据
+                # 从矩阵中提取数据，需要跟踪当前角色名和ID
+                current_character = ""
+                current_char_id = ""
+                
                 for row_data in matrix:
                     if len(row_data) >= 5:
                         # 跳过行号列（列0）
-                        character = row_data[1] if len(row_data) > 1 else ""
+                        character_cell = row_data[1] if len(row_data) > 1 else ""
                         id_or_costume = row_data[2] if len(row_data) > 2 else ""
                         costume_or_idle = row_data[3] if len(row_data) > 3 else ""
                         idle_or_cutscene = row_data[4] if len(row_data) > 4 else ""
                         cutscene_or_next = row_data[5] if len(row_data) > 5 else ""
                         
-                        # 判断数据类型：如果第二列看起来像ID（char开头），则调整列位置
-                        if id_or_costume.startswith('char'):
-                            # 这是一个有character name的行
-                            costume = costume_or_idle
-                            idle = idle_or_cutscene
-                            cutscene = cutscene_or_next
+                        # 判断是否是新的角色行（有角色名）
+                        if character_cell.strip():
+                            current_character = character_cell.strip()
+                            
+                            # 判断数据类型：如果第二列看起来像ID（char开头、illust_开头、specialIllust开头、specialillust开头），则调整列位置
+                            if id_or_costume.startswith(('char', 'illust_', 'specialIllust', 'specialillust')):
+                                current_char_id = id_or_costume.strip()
+                                costume = costume_or_idle.strip()
+                                idle = idle_or_cutscene.strip()
+                                cutscene = cutscene_or_next.strip()
+                            else:
+                                # 角色名存在但没有ID，这种情况下第二列应该是服装
+                                current_char_id = ""
+                                costume = id_or_costume.strip()
+                                idle = costume_or_idle.strip()
+                                cutscene = idle_or_cutscene.strip()
                         else:
-                            # 这是一个被rowspan影响的行，character列被跳过
-                            costume = id_or_costume
-                            idle = costume_or_idle
-                            cutscene = idle_or_cutscene
+                            # 这是一个被rowspan影响的行，使用当前角色信息
+                            if id_or_costume.startswith(('char', 'illust_')):
+                                # 这行有新的ID，说明是同一角色的不同服装变体
+                                current_char_id = id_or_costume.strip()
+                                costume = costume_or_idle.strip()
+                                idle = idle_or_cutscene.strip()
+                                cutscene = cutscene_or_next.strip()
+                            else:
+                                # 普通的服装行
+                                costume = id_or_costume.strip()
+                                idle = costume_or_idle.strip()
+                                cutscene = idle_or_cutscene.strip()
                         
-                        if character and costume:
+                        # 只有当有角色名和服装时才添加数据
+                        if current_character and costume:
                             rows.append(CharacterData(
-                                character=character.strip(),
-                                costume=costume.strip(),
-                                idle=idle.strip(),
-                                cutscene=cutscene.strip()
+                                character=current_character,
+                                costume=costume,
+                                idle=idle,
+                                cutscene=cutscene,
+                                char_id=current_char_id
                             ))
                     
             except Exception as e:
@@ -434,6 +469,105 @@ class CharacterScraper:
         
         return matches
 
+    def get_idle_by_id(self, char_id: str, *, html: Optional[str] = None):
+        """
+        根据角色ID获取idle值
+        
+        Args:
+            char_id: 角色ID (如: char000101, char000102)
+            html: 可选的HTML内容，如果不提供则从网站获取
+            
+        Returns:
+            idle值（字符串或整数）
+            
+        Raises:
+            ValueError: 解析失败
+            LookupError: 未找到匹配的ID
+        """
+        html_text = html if html is not None else self.fetch_html()
+        rows = self.parse_rows(html_text)
+        
+        if not rows:
+            raise ValueError("未能在页面中解析到有效的角色数据")
+
+        # 标准化ID，移除前缀并比较
+        normalized_id = char_id.lower().strip()
+        
+        # 查找匹配的ID
+        for row in rows:
+            if row.char_id.lower().strip() == normalized_id:
+                return _maybe_to_int(row.idle)
+        
+        # 如果没找到精确匹配，提供有用的调试信息
+        available_ids = [row.char_id for row in rows[:10] if row.char_id]
+        raise LookupError(
+            f"未找到匹配的角色ID: '{char_id}'\n"
+            f"可用ID示例: {available_ids[:5]}"
+        )
+
+    def get_cutscene_by_id(self, char_id: str, *, html: Optional[str] = None):
+        """
+        根据角色ID获取cutscene值
+        
+        Args:
+            char_id: 角色ID (如: char000101, char000102)
+            html: 可选的HTML内容，如果不提供则从网站获取
+            
+        Returns:
+            cutscene值（字符串或整数）
+            
+        Raises:
+            ValueError: 解析失败
+            LookupError: 未找到匹配的ID
+        """
+        html_text = html if html is not None else self.fetch_html()
+        rows = self.parse_rows(html_text)
+        
+        if not rows:
+            raise ValueError("未能在页面中解析到有效的角色数据")
+
+        # 标准化ID，移除前缀并比较
+        normalized_id = char_id.lower().strip()
+        
+        # 查找匹配的ID
+        for row in rows:
+            if row.char_id.lower().strip() == normalized_id:
+                return _maybe_to_int(row.cutscene)
+        
+        # 如果没找到精确匹配，提供有用的调试信息
+        available_ids = [row.char_id for row in rows[:10] if row.char_id]
+        raise LookupError(
+            f"未找到匹配的角色ID: '{char_id}'\n"
+            f"可用ID示例: {available_ids[:5]}"
+        )
+
+    def get_character_by_id(self, char_id: str, *, html: Optional[str] = None) -> Optional[CharacterData]:
+        """
+        根据角色ID获取完整的角色数据
+        
+        Args:
+            char_id: 角色ID (如: char000101, char000102)
+            html: 可选的HTML内容，如果不提供则从网站获取
+            
+        Returns:
+            匹配的角色数据，如果未找到则返回None
+        """
+        html_text = html if html is not None else self.fetch_html()
+        rows = self.parse_rows(html_text)
+        
+        if not rows:
+            return None
+
+        # 标准化ID，移除前缀并比较
+        normalized_id = char_id.lower().strip()
+        
+        # 查找匹配的ID
+        for row in rows:
+            if row.char_id.lower().strip() == normalized_id:
+                return row
+        
+        return None
+
 
 __all__ = ["CharacterScraper", "CharacterData"]
 
@@ -444,7 +578,7 @@ if __name__ == "__main__":
     
     try:
         # 测试从本地HTML文件读取
-        with open("网页.html", "r", encoding="utf-8") as f:
+        with open("文档.html", "r", encoding="utf-8") as f:
             html_content = f.read()
         
         idle_value = scraper.get_cutscene("Celia", "The Curse", html=html_content)
@@ -458,10 +592,31 @@ if __name__ == "__main__":
         lathel_data = scraper.search_characters("Celia", html=html_content)
         print(f"\nCelia的所有服装 ({len(lathel_data)}个):")
         for data in lathel_data:
-            print(f"  - {data.costume}: Idle={data.idle}, Cutscene={data.cutscene}")
+            print(f"  - {data.costume}: ID={data.char_id}, Idle={data.idle}, Cutscene={data.cutscene}")
+        
+        # 测试基于ID的查找功能
+        print(f"\n=== 测试ID查找功能 ===")
+        try:
+            # 测试根据ID获取idle值
+            idle_by_id = scraper.get_idle_by_id("char000101", html=html_content)
+            print(f"char000101 的 idle = {idle_by_id}")
+            
+            # 测试根据ID获取cutscene值
+            cutscene_by_id = scraper.get_cutscene_by_id("char000101", html=html_content)
+            print(f"char000101 的 cutscene = {cutscene_by_id}")
+            
+            # 测试获取完整角色数据
+            character_data = scraper.get_character_by_id("char000102", html=html_content)
+            if character_data:
+                print(f"char000102 的完整数据: {character_data}")
+            else:
+                print("char000102 未找到")
+                
+        except Exception as e:
+            print(f"ID查找测试失败: {e}")
             
     except FileNotFoundError:
-        print("请确保网页.html文件存在")
+        print("请确保文档.html文件存在")
         
         # 如果文件不存在，尝试从网站获取数据
         print("尝试从网站获取数据...")

@@ -97,16 +97,17 @@ class BD2Console:
 │ 🏗️  创建MOD工作目录 (选项 0)                                │
 │   • 输入自定义的MOD工作目录名称                              │
 │   • 保存工作目录配置到config.json                           │
-│   • 从谷歌表格获取最新角色数据                              │
-│   • 自动创建完整的角色目录结构                              │
-│   • 格式: 工作目录\\角色\\服装\\类型                         │
+│   • 自动创建IDLE和CUTSCENE基础目录结构                      │
+│   • 新格式: 工作目录\\作者名\\IDLE|CUTSCENE\\MOD名称         │
 │   • 支持多个独立的MOD工作环境                               │
+│   • 角色信息从MOD文件名自动识别                             │
 │                                                              │
 │ 📦 MOD打包 (选项 1)                                         │
 │   • 列出所有已配置的工作目录                                │
 │   • 选择要打包的特定工作目录                                │
 │   • 检测游戏版本更新                                        │
-│   • 扫描工作目录中的替换文件                                │
+│   • 扫描工作目录中的MOD文件                                 │
+│   • 从文件名自动提取角色ID信息                              │
 │   • 下载原始游戏资源                                        │
 │   • 执行Unity资源替换                                       │
 │   • 生成详细的README文件                                    │
@@ -134,19 +135,37 @@ class BD2Console:
 │                                                              │
 │ 📁 工作目录结构说明                                          │
 │   工作目录名/                                               │
-│   ├── 角色名/                                               │
-│   │   ├── 服装名/                                           │
-│   │   │   ├── CUTSCENE/MOD文件夹  # 技能动画                │
-│   │   │   └── IDLE/MOD文件夹      # 立绘动画                │
+│   ├── 作者名1/                                             │
+│   │   ├── IDLE/                        # 立绘动画MOD       │
+│   │   │   ├── MOD名称1/                                    │
+│   │   │   │   ├── char000101.atlas     # MOD文件           │
+│   │   │   │   └── char000101.modfile                       │
+│   │   │   └── MOD名称2/                                    │
+│   │   └── CUTSCENE/                    # 技能动画MOD       │
+│   │       └── MOD名称3/                                    │
+│   │           ├── char000102.skel                          │
+│   │           └── char000102.json                          │
+│   └── 作者名2/                                             │
+│       └── IDLE/                                            │
+│           └── MOD名称4/                                    │
+│               └── illust_dating001.atlas                   │
+│                                                              │
+│ 📝 MOD文件命名规则                                          │
+│   • 文件名必须包含角色ID (如: char000101, illust_dating001) │
+│   • 支持的文件格式: .atlas, .modfile, .skel, .json        │
+│   • 系统会从文件名自动识别角色和服装信息                   │
+│   • 同一MOD目录下的所有文件应使用相同的角色ID               │
 │                                                              │
 │ ⚠️  使用注意事项                                             │
-│   • 确保网络连接正常（需要访问谷歌表格和游戏CDN）           │
+│   • 确保网络连接正常（需要访问游戏CDN）                     │
 │   • 建议为不同作者或MOD类型创建独立工作目录                 │
-│   • 工作目录名支持中文、英文和特殊字符                      │
-│   • 可以同时维护多个MOD项目                                 │
+│   • 工作目录名和作者名支持中文、英文和特殊字符              │
+│   • 可以同时维护多个MOD项目和作者                          │
 │   • 程序会自动保存工作目录配置                              │
+│   • MOD文件命名必须包含正确的角色ID                        │
 │   • 删除工作目录前请确保重要文件已备份                      │
 │   • 清理空文件夹功能不会删除包含文件的目录                  │
+│   • 系统支持char*, illust_*, specialIllust*等ID格式        │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
         """
@@ -198,14 +217,15 @@ class BD2Console:
                         continue
                 else:
                     # 如果目录不存在，创建
-                    print(f"📂 物理目录 '{workspace_name}' 不存在，将自动创建")
-                    workspace_path.mkdir(parents=True, exist_ok=True)
+                    print(f"📂 物理目录 '{workspace_name}' 不存在")
                 
                 break
             
             # 确认创建
             print(f"\n📂 将要创建工作目录: {workspace_name}")
             print(f"📍 物理路径: {self.config.get_mod_workspace_path(workspace_name)}")
+            print(f"📋 将创建基础目录结构: IDLE/ 和 CUTSCENE/")
+            print(f"💡 您可以在其中创MOD目录(推荐采用MOD名称)")
             
             response = input("\n是否确认创建？(y/N): ").strip().lower()
             if response not in ['y', 'yes', '是']:
@@ -218,20 +238,21 @@ class BD2Console:
                 return
             print(f"✅ 工作目录 '{workspace_name}' 已添加到配置")
             # 创建物理目录
+            workspace_path.mkdir(parents=True, exist_ok=True)
 
             print("="*60)
-            response = input("\n是否创建角色MOD路径（默认创建全部角色路径）？(y/N): ").strip().lower()
-            if response not in ['y', 'yes', '是']:
-                print(f"✅ MOD工作区 '{workspace_name}' 创建完成，但未创建角色路径，后续请手动创建！")
-                return
-            print(f"\n📂 将要创建 {workspace_name} 的角色MOD目录")
-
-            from bd2_mod_packer.utils import DirectoryInitializer
-            # 创建初始化器，指定工作目录
-            initializer = DirectoryInitializer(str(self.config.get_mod_projects_dir()), workspace_name)
-            # 执行初始化
-            initializer.initialize_all_directories()
-            print(f"✅ MOD工作区 '{workspace_name}' 创建完成，并完创建了所有角色路径！")
+            # 创建基础目录结构：IDLE和CUTSCENE目录
+            workspace_path = self.config.get_mod_workspace_path(workspace_name)
+            for animation_type in ["IDLE", "CUTSCENE"]:
+                (workspace_path / animation_type).mkdir(parents=True, exist_ok=True)
+            print(f"📁 已创建基础目录: IDLE/ 和 CUTSCENE/")
+            print(f"✅ MOD工作区 '{workspace_name}' 创建完成！")
+            print()
+            print("📝 使用说明:")
+            print(f"1. 在 IDLE/ 或 CUTSCENE/ 目录下创建作MOD文件夹(推荐些MOD名称)")
+            print(f"2. 将MOD文件放入MOD名称文件夹中")
+            print(f"3. MOD文件名必须包含角色ID (如: char000101.atlas)")
+            print(f"示例结构: {workspace_name}/IDLE/xxx服装MOD/char000101.atlas")
         except Exception as e:
             logger.error(f"创建工作目录过程中发生错误: {e}")
             print(f"❌ 创建工作目录失败: {e}")
@@ -356,12 +377,16 @@ class BD2Console:
         
         count = 0
         try:
-            # 遍历工作目录下的所有子目录
-            for item in workspace_path.iterdir():
-                if item.is_dir() and not item.name.startswith('.'):
-                    # 检查文件夹是否包含文件（递归检查）
-                    if self._folder_contains_files(item):
-                        count += 1
+            # 遍历工作目录下IDLE和CUTSCENE所有子目录
+            for sub_dir in ['IDLE', 'CUTSCENE']:
+                sub_dir_path = workspace_path / sub_dir
+                if sub_dir_path.exists() and sub_dir_path.is_dir():
+                    for item in sub_dir_path.iterdir():
+                        if item.is_dir() and not item.name.startswith('.'):
+                            # 检查文件夹是否包含文件（递归检查）
+                            if self._folder_contains_files(item):
+                                count += 1
+
         except Exception:
             pass
         

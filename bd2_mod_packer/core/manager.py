@@ -69,15 +69,11 @@ class BD2ModManager:
             # 确保基础目录存在
             workspace_path = self.config.get_mod_workspace_path(workspace_name)
             workspace_path.mkdir(parents=True, exist_ok=True)
-            # 创建角色路径
-            logger.info(f"开始初始化角色路径: {workspace_path}")
-            from ..utils.workspace_initializer import DirectoryInitializer
-            directory_initializer = DirectoryInitializer(self.config.get_mod_projects_dir(),workspace_path)
-            directory_initializer.initialize_all_directories()
-            logger.info(f"初始化角色路径完成: {workspace_path}")
+            # 创建IDLE和CUTSCENE目录
+            for animation_type in ["IDLE", "CUTSCENE"]:
+                (workspace_path / animation_type).mkdir(parents=True, exist_ok=True)
 
             logger.info(f"成功创建MOD工作区目录: {workspace_path}")
-            logger.info(f"成功创建MOD工作区: {workspace_name}")
             return True
 
         except Exception as e:

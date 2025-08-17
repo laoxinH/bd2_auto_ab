@@ -40,9 +40,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ReplaceTask:
     """替换任务信息"""
-    char: str
-    costume: str
-    type: str
+    type: str  # IDLE或CUTSCENE
     replace_dir: str
     data_name: str
     downloaded_dir: str
@@ -50,6 +48,7 @@ class ReplaceTask:
     mod_name: str = ""
     idle_or_cutscene_value: str = ""
     hash_id: str = ""
+    char_id: str = ""  # 角色ID，从mod文件名获取
     should_execute: bool = True  # 是否需要执行该任务
     
 
@@ -261,10 +260,12 @@ class BD2ResourceManager:
     
     def _scan_replace_directories(self) -> List[str]:
         """
-        扫描replace目录下的所有三级子目录
+        扫描replace目录下的所有MOD目录
+        
+        新目录结构: workspace/mod_projects/作者名/IDLE或CUTSCENE/MOD名称/
         
         返回:
-            List[str]: 三级子目录路径列表
+            List[str]: MOD目录路径列表
         """
         replace_dirs = []
         
@@ -273,15 +274,18 @@ class BD2ResourceManager:
             return replace_dirs
         
         try:
-            # 遍历 replace/*/*/
-            for level1 in self.replace_dir.iterdir():
-                if level1.is_dir():
-                    for level2 in level1.iterdir():
-                        if level2.is_dir():
-                            for level3 in level2.iterdir():
-                                if level3.is_dir():
-                                    relative_path = level3.relative_to(self.project_root)
-                                    replace_dirs.append(str(relative_path))
+            # 遍历作者目录
+            
+                
+                # 在作者目录下查找IDLE和CUTSCENE目录
+            for animation_type_dir in self.replace_dir.iterdir():
+                if (animation_type_dir.is_dir() and 
+                    animation_type_dir.name in ["IDLE", "CUTSCENE"]):
+                    # 遍历MOD目录
+                    for mod_dir in animation_type_dir.iterdir():
+                        if mod_dir.is_dir():
+                            relative_path = mod_dir.relative_to(self.project_root)
+                            replace_dirs.append(str(relative_path))
             
             logger.info(f"扫描到 {len(replace_dirs)} 个替换目录")
             return replace_dirs
@@ -307,7 +311,9 @@ class BD2ResourceManager:
             # 检查是否有任何文件
             for item in dir_path.rglob('*'):
                 if item.is_file():
+                    # logger.info(f"目录不为空: {dir_path}")
                     return False
+            # logger.info(f"目录为空: {dir_path}")
             return True
         except Exception as e:
             logger.warning(f"检查目录是否为空失败 {dir_path}: {e}")
@@ -475,6 +481,8 @@ class BD2ResourceManager:
         """
         建立替换映射清单
         
+        新目录结构: workspace/mod_projects/作者名/IDLE或CUTSCENE/MOD名称/
+        
         参数:
             specific_dirs: 指定要处理的目录列表（增量更新时使用），为None时处理所有目录
             
@@ -499,48 +507,52 @@ class BD2ResourceManager:
                 for dir_path in specific_dirs:
                     specific_dirs_set.add(dir_path.replace("\\", "/"))
             
-            # 处理所有目录，无论是否指定了特定目录
-            for char_dir in self.replace_dir.iterdir():
-                if not char_dir.is_dir():
+            # 新目录结构：遍历 作者目录 -> IDLE/CUTSCENE目录 -> MOD目录
+            
+                
+            logger.info(f"处理作者目录: {self.replace_dir.name}")
+            
+            # 在作者目录下查找IDLE和CUTSCENE目录
+            for animation_type_dir in self.replace_dir.iterdir():
+                if not animation_type_dir.is_dir():
                     continue
                 
-                char = char_dir.name
-                logger.info(f"处理角色: {char}")
+                # 只处理IDLE和CUTSCENE目录
+                if animation_type_dir.name not in ["IDLE", "CUTSCENE"]:
+                    continue
                 
-                for costume_dir in char_dir.iterdir():
-                    if not costume_dir.is_dir():
+                type_name = animation_type_dir.name
+                logger.info(f"  处理动画类型: {type_name}")
+                
+                # 遍历MOD目录
+                for mod_dir in animation_type_dir.iterdir():
+                    if not mod_dir.is_dir():
                         continue
                     
-                    costume = costume_dir.name
-                    logger.info(f"  处理服装: {costume}")
+                    mod_name = mod_dir.name
+                    logger.info(f"    处理MOD: {mod_name}")
                     
-                    for type_dir in costume_dir.iterdir():
-                        if not type_dir.is_dir():
-                            continue
-                        
-                        type_name = type_dir.name
-                        logger.info(f"    处理类型: {type_name}")
-                        
-                        # 检查目录是否为空
-                        if self._is_directory_empty(type_dir):
-                            logger.info(f"      跳过空目录: {char}/{costume}/{type_name}")
-                            continue
-                        
-                        # 确定任务是否应该执行
-                        should_execute = True
-                        if specific_dirs:
-                            # 构建当前目录的相对路径
-                            current_dir_rel = type_dir.relative_to(self.project_root)
-                            current_dir_rel_str = str(current_dir_rel).replace("\\", "/")
-                            should_execute = current_dir_rel_str in specific_dirs_set
-                            if should_execute:
-                                logger.info(f"      ✓ 目录在更新列表中: {char}/{costume}/{type_name}")
-                            else:
-                                logger.info(f"      - 目录不在更新列表中: {char}/{costume}/{type_name}")
-                        
-                        task = self._create_replace_task(char, costume, type_name, type_dir, should_execute)
-                        if task:
-                            replace_tasks.append(task)
+                    # 检查目录是否为空
+                    if self._is_directory_empty(mod_dir):
+                        logger.info(f"    跳过空目录: {type_name}/{mod_name}")
+                        continue
+                    # logger.info(f"    开始创建替换任务======================================")
+                    # 确定任务是否应该执行
+                    should_execute = True
+                    if specific_dirs:
+                        # 构建当前目录的相对路径
+                        current_dir_rel = mod_dir.relative_to(self.project_root)
+                        current_dir_rel_str = str(current_dir_rel).replace("\\", "/")
+                        should_execute = current_dir_rel_str in specific_dirs_set
+                        if should_execute:
+                            logger.info(f"    ✓ 目录在更新列表中: {type_name}/{mod_name}")
+                        else:
+                            logger.info(f"    - 目录不在更新列表中: {type_name}/{mod_name}")
+                    
+                    task = self._create_replace_task(type_name, mod_dir, should_execute)
+                    # logger.info(f"    创建替换任务: {task}")
+                    if task:
+                        replace_tasks.append(task)
             
             # 如果是增量更新，需要额外处理相同目标路径的任务
             if specific_dirs:
@@ -556,7 +568,7 @@ class BD2ResourceManager:
                     if not task.should_execute and task.target_dir in executable_target_dirs:
                         task.should_execute = True
                         additional_count += 1
-                        logger.info(f"      ✓ 相同目标路径，标记为可执行: {task.char}/{task.costume}/{task.type}")
+                        logger.info(f"    ✓ 相同目标路径，标记为可执行: {task.type}/{task.mod_name}")
                 
                 if additional_count > 0:
                     logger.info(f"因相同目标路径额外标记 {additional_count} 个任务为可执行")
@@ -572,60 +584,70 @@ class BD2ResourceManager:
             logger.error(f"建立替换映射清单失败: {e}")
             return replace_tasks
     
-    def _create_replace_task(self, char: str, costume: str, type_name: str, type_dir: Path, should_execute: bool = True) -> Optional[ReplaceTask]:
+    def _create_replace_task(self, type_name: str, mod_dir: Path, should_execute: bool = True) -> Optional[ReplaceTask]:
+        # logger.info(f"    创建替换任务: {type_name}/{mod_dir.name}/ {should_execute}")
         """
-        为单个目录创建替换任务
+        为单个MOD目录创建替换任务
+        
+        新逻辑:
+        1. 从MOD目录路径判断IDLE/CUTSCENE类型
+        2. 从mod文件名提取角色ID
+        3. 使用ID查找方法获取idle/cutscene值
         
         参数:
-            char: 角色名
-            costume: 服装名
-            type_name: 类型名(IDLE/CUTSCENE)
-            type_dir: 类型目录路径
+            type_name: 类型名(IDLE/CUTSCENE)，从目录路径获取
+            mod_dir: MOD目录路径
             should_execute: 是否需要执行该任务
             
         返回:
             Optional[ReplaceTask]: 创建的任务，失败时返回None
         """
         try:
-            # 获取idle值或cutscene值
-            if type_name.upper() == "IDLE":
-                idle_or_cutscene_value = self.character_scraper.get_idle(char, costume)
-            elif type_name.upper() == "CUTSCENE":
-                idle_or_cutscene_value = self.character_scraper.get_cutscene(char, costume)
-            else:
-                logger.warning(f"未知类型: {type_name}，跳过")
+            mod_name = mod_dir.name
+            
+            # 步骤1：从mod文件中获取角色ID
+            char_id = self._extract_char_id_from_mod_files(mod_dir)
+            if not char_id:
+                logger.warning(f"    无法从MOD文件中提取角色ID，跳过: {type_name}/{mod_name}")
+                return None
+            
+            logger.info(f"    提取到角色ID: {char_id}")
+            
+            # 步骤2：使用ID查找方法获取idle或cutscene值
+            try:
+                if type_name.upper() == "IDLE":
+                    idle_or_cutscene_value = self.character_scraper.get_idle_by_id(char_id)
+                elif type_name.upper() == "CUTSCENE":
+                    idle_or_cutscene_value = self.character_scraper.get_cutscene_by_id(char_id)
+                else:
+                    logger.warning(f"    未知类型: {type_name}，跳过")
+                    return None
+            except Exception as e:
+                logger.warning(f"    无法获取 {char_id} 的{type_name}值: {e}")
                 return None
             
             if not idle_or_cutscene_value:
-                logger.warning(f"无法获取 {char}/{costume}/{type_name} 的值，跳过")
+                logger.warning(f"    角色ID {char_id} 的{type_name}值为空，跳过")
                 return None
             
-            logger.info(f"      获取到值: {idle_or_cutscene_value}")
+            logger.info(f"    获取到{type_name}值: {idle_or_cutscene_value}")
             
-            # 通过BD2CDNAPI获取资源名称和hash
+            # 步骤3：通过BD2CDNAPI获取资源名称和hash
             result = self.cdn_api.get_resource_bundle_name_and_hash(idle_or_cutscene_value)
             if not result:
-                logger.warning(f"无法获取 {idle_or_cutscene_value} 的资源信息，跳过")
+                logger.warning(f"    无法获取 {idle_or_cutscene_value} 的资源信息，跳过")
                 return None
             
             resource_name, hash_id = result
-            logger.info(f"      资源名称: {resource_name}, Hash: {hash_id}")
+            logger.info(f"    资源名称: {resource_name}, Hash: {hash_id}")
             
-            # 构建路径
-            replace_dir_path = str(type_dir)
+            # 步骤4：构建路径
+            replace_dir_path = str(mod_dir)
             downloaded_dir = f"{self.downloaded_dir}{os.sep}{resource_name}"
             target_dir = f"{self.target_dir}/{idle_or_cutscene_value}/{hash_id}/__data"
             
-            # 获取mod名称（如果存在子目录）
-            mod_name = ""
-            sub_dirs = [item for item in type_dir.iterdir() if item.is_dir()]
-            if sub_dirs:
-                mod_name = sub_dirs[0].name
-            
-            # 创建替换任务
+            # 步骤5：创建替换任务
             task = ReplaceTask(
-                char=char,
-                costume=costume,
                 type=type_name,
                 replace_dir=replace_dir_path,
                 data_name=resource_name,
@@ -634,15 +656,79 @@ class BD2ResourceManager:
                 mod_name=mod_name,
                 idle_or_cutscene_value=idle_or_cutscene_value,
                 hash_id=hash_id,
+                char_id=char_id,
                 should_execute=should_execute
             )
             
             status_text = "✅ 添加替换任务" if should_execute else "📋 添加任务(不执行)"
-            logger.info(f"      {status_text}: {char}/{costume}/{type_name}")
+            logger.info(f"    {status_text}: {type_name}/{mod_name} (ID: {char_id})")
             return task
             
         except Exception as e:
-            logger.error(f"创建替换任务失败 {char}/{costume}/{type_name}: {e}")
+            logger.error(f"创建替换任务失败 {type_name}/{mod_dir.name}: {e}")
+            return None
+    
+    def _extract_char_id_from_mod_files(self, mod_dir: Path) -> Optional[str]:
+        """
+        从MOD目录中的文件名提取角色ID
+        
+        查找规则：
+        1. 查找后缀为 .atlas, .modfile, .skel, .json 的文件
+        2. 提取文件名（不含后缀）作为角色ID
+        3. 移除可能存在的 cutscene_ 或 idle_ 前缀
+        4. 如果找到多个文件，使用第一个匹配的ID
+        
+        参数:
+            mod_dir: MOD目录路径
+            
+        返回:
+            Optional[str]: 提取到的角色ID（已移除前缀），失败时返回None
+        """
+        try:
+            # 支持的文件后缀
+            supported_extensions = ['.atlas', '.modfile', '.skel', '.json']
+            
+            # 查找匹配的文件
+            found_files = []
+            for file_path in mod_dir.iterdir():
+                if file_path.is_file():
+                    file_ext = file_path.suffix.lower()
+                    if file_ext in supported_extensions:
+                        found_files.append(file_path)
+            
+            if not found_files:
+                logger.warning(f"    目录中未找到有效的mod文件 (.atlas, .modfile, .skel, .json): {mod_dir}")
+                return None
+            
+            # 提取所有文件的ID（不含后缀的文件名）
+            char_ids = []
+            for file_path in found_files:
+                char_id = file_path.stem  # 获取不含后缀的文件名
+                
+                # 移除cutscene_或idle_前缀
+                if char_id:
+                    if char_id.startswith('cutscene_'):
+                        char_id = char_id[9:]  # 移除 'cutscene_' 前缀（9个字符）
+                        logger.info(f"    移除cutscene_前缀，角色ID: {char_id}")
+                    elif char_id.startswith('idle_'):
+                        char_id = char_id[5:]  # 移除 'idle_' 前缀（5个字符）
+                        logger.info(f"    移除idle_前缀，角色ID: {char_id}")
+                
+                if char_id and char_id not in char_ids:
+                    char_ids.append(char_id)
+            
+            if not char_ids:
+                logger.warning(f"    无法从文件名提取角色ID: {mod_dir}")
+                return None
+            
+            # 如果有多个ID，输出警告并使用第一个
+            if len(char_ids) > 1:
+                logger.warning(f"    发现多个角色ID: {char_ids}，使用第一个: {char_ids[0]}")
+            
+            return char_ids[0]
+            
+        except Exception as e:
+            logger.error(f"提取角色ID失败 {mod_dir}: {e}")
             return None
     
     def _save_replace_mapping(self, tasks: List[ReplaceTask], filename: str = "清单.json") -> None:
@@ -657,9 +743,15 @@ class BD2ResourceManager:
             # 转换为JSON格式
             json_data = []
             for task in tasks:
+                # 通过角色ID获取角色和服装信息
+                char_data = self.character_scraper.get_character_by_id(task.char_id)
+                char_name = char_data.character if char_data else task.char_id
+                costume_name = char_data.costume if char_data else "未知"
+                
                 json_data.append({
-                    "char": task.char,
-                    "costume": task.costume,
+                    "char": char_name,
+                    "costume": costume_name,
+                    "char_id": task.char_id,
                     "type": task.type,
                     "replaceDir": task.replace_dir,
                     "dataName": task.data_name,
@@ -716,7 +808,12 @@ class BD2ResourceManager:
                     if task.should_execute:
                         executed_count += 1
                     
-                    logger.info(f"  {i}. {status} - {task.char}/{task.costume}/{task.type}")
+                    # 通过角色ID获取角色和服装信息用于显示
+                    char_data = self.character_scraper.get_character_by_id(task.char_id)
+                    char_name = char_data.character if char_data else task.char_id
+                    costume_name = char_data.costume if char_data else "未知"
+                    
+                    logger.info(f"  {i}. {status} - {char_name}/{costume_name}/{task.type} (ID: {task.char_id})")
                     logger.info(f"     值: {task.idle_or_cutscene_value}")
                     logger.info(f"     资源: {task.data_name}")
                     logger.info(f"     Hash: {task.hash_id}")
@@ -750,7 +847,12 @@ class BD2ResourceManager:
                     if task.should_execute:
                         executed_count += 1
                     
-                    logger.info(f"  {i}. {status} - {task.char}/{task.costume}/{task.type}")
+                    # 通过角色ID获取角色和服装信息用于显示
+                    char_data = self.character_scraper.get_character_by_id(task.char_id)
+                    char_name = char_data.character if char_data else task.char_id
+                    costume_name = char_data.costume if char_data else "未知"
+                    
+                    logger.info(f"  {i}. {status} - {char_name}/{costume_name}/{task.type} (ID: {task.char_id})")
                     logger.info(f"     值: {task.idle_or_cutscene_value}")
                     logger.info(f"     资源: {task.data_name}")
                     logger.info(f"     Hash: {task.hash_id}")
@@ -962,9 +1064,15 @@ class BD2ResourceManager:
                     f.write("已更新的MOD:\n")
                     f.write("-" * 20 + "\n")
                     for i, task in enumerate(executed_tasks, 1):
+                        # 通过角色ID获取角色和服装信息用于显示
+                        char_data = self.character_scraper.get_character_by_id(task.char_id)
+                        char_name = char_data.character if char_data else task.char_id
+                        costume_name = char_data.costume if char_data else "未知"
+                        
                         f.write(f"{i}. ✅ {task.mod_name}\n")
-                        f.write(f"   角色: {task.char}\n")
-                        f.write(f"   服装: {task.costume}\n")
+                        f.write(f"   角色ID: {task.char_id}\n")
+                        f.write(f"   角色: {char_name}\n")
+                        f.write(f"   服装: {costume_name}\n")
                         f.write(f"   类型: {task.type}\n")
                         f.write(f"   替换目录: {task.replace_dir}\n\n")
                 
@@ -973,18 +1081,31 @@ class BD2ResourceManager:
                     f.write("未更改的MOD:\n")
                     f.write("-" * 20 + "\n")
                     for i, task in enumerate(skipped_tasks, 1):
+                        # 通过角色ID获取角色和服装信息用于显示
+                        char_data = self.character_scraper.get_character_by_id(task.char_id)
+                        char_name = char_data.character if char_data else task.char_id
+                        costume_name = char_data.costume if char_data else "未知"
+                        
                         f.write(f"{i}. ⏭️ {task.mod_name}\n")
-                        f.write(f"   角色: {task.char}\n")
-                        f.write(f"   服装: {task.costume}\n")
+                        f.write(f"   角色ID: {task.char_id}\n")
+                        f.write(f"   角色: {char_name}\n")
+                        f.write(f"   服装: {costume_name}\n")
                         f.write(f"   类型: {task.type}\n")
                         f.write(f"   替换目录: {task.replace_dir}\n")
                         f.write(f"   原因: 目录未在更新列表中\n\n")
                 
                 f.write("使用说明:\n")
-                f.write("1. 将_data文件复制到游戏对应位置\n")
+                f.write("1. 将__data文件复制到游戏对应位置\n")
                 f.write("2. 确保文件路径结构正确\n")
                 f.write("3. 重新启动游戏以应用修改\n")
-                f.write("4. 跳过的MOD需要手动触发更新才会应用\n")
+                f.write("4. 跳过的MOD需要手动触发更新才会应用\n\n")
+                
+                f.write("目录结构说明:\n")
+                f.write("新的简化目录结构: 作者名/IDLE或CUTSCENE/MOD名称/\n")
+                f.write("• MOD文件命名必须包含角色ID (如: char000101.atlas)\n")
+                f.write("• 系统会从文件名自动识别角色和服装信息\n")
+                f.write("• 支持的文件格式: .atlas, .modfile, .skel, .json\n")
+                f.write("• 支持的角色ID格式: char*, illust_*, specialIllust*等\n")
             
             logger.info(f"📝 已生成README文件: {readme_path}")
             

@@ -60,10 +60,10 @@ BD2 MOD Packer v2.0 是专为《Brown Dust 2》游戏开发的新一代自动化
 ## ✨ 主要特性
 
 ### 🏗️ **自动化目录管理**
-- 📊 **智能数据获取**: 自动从Google Sheets获取最新角色数据
-- 📁 **目录结构生成**: 自动创建标准化的MOD目录结构
+- 📊 **智能角色识别**: 从MOD文件名自动识别角色和服装信息
+- 📁 **简化目录结构**: 新的三级目录结构：作者/类型/MOD名称
 - 🔄 **增量更新**: 智能跳过已存在目录，支持增量初始化
-- 🎭 **多服装支持**: 完整支持角色的所有服装变体
+- 🎭 **多格式支持**: 支持char*, illust_*, specialIllust*等多种ID格式
 
 ### 🎨 **Unity资源处理**
 - 🔧 **Unity Bundle支持**: 完整的Unity AssetBundle读取和修改
@@ -231,23 +231,26 @@ bd2_auto_ab/
 
 2. **0️⃣ 创建工作区**
    - 选择菜单选项 "0" - 创建MOD工作目录
-   - 输入工作区名称（如 "我的MOD"）
-   - 系统自动创建标准目录结构
+   - 输入工作区名称（如 "我的MOD"）  
+   - 系统自动创建基础目录结构（IDLE/ 和 CUTSCENE/）
 
-3. **� 放置MOD文件**
+3. **📁 放置MOD文件**
    - 将您的MOD文件放入对应的工作区目录
-   - 系统支持角色/服装/类型的标准化管理
+   - 新结构：作者名/IDLE或CUTSCENE/MOD名称/
+   - MOD文件名必须包含角色ID（如：char000101.atlas）
 
 #### 日常MOD制作
 
 1. **📁 管理MOD文件**
    - 在 `workspace/mod_projects/your_workspace/` 中组织您的MOD
-   - 支持多个角色、服装的并行开发
+   - 新结构：作者名/IDLE或CUTSCENE/MOD名称/
+   - 支持多个作者、多种MOD类型的并行开发
+   - MOD文件必须包含角色ID用于自动识别
 
 2. **📦 一键打包**
    - 选择菜单选项 "1" - 执行MOD打包
    - 选择要打包的工作区
-   - 系统自动处理并输出到 `targetdata/`
+   - 系统自动识别角色信息并处理，输出到 `targetdata/`
 
 3. **🧹 清理维护**
    - 定期使用选项 "3" 清理空文件夹
@@ -410,9 +413,10 @@ bd2_auto_ab/                        # 项目根目录
 - 🔄 自动重试和错误恢复
 
 #### 4. **数据处理** (`CharacterScraper.py`)
-- 🕷️ Google Sheets数据抓取
-- 📊 角色和服装数据解析
+- � 基于ID的角色数据查找
+- 📊 角色和服装数据解析  
 - 💾 本地缓存管理
+- 🏷️ 多种ID格式支持（char*, illust_*, specialIllust*等）
 
 ### 🧪 测试和调试
 
@@ -485,20 +489,23 @@ pip install requests beautifulsoup4 lxml tqdm UnityPy Pillow blackboxprotobuf
 ### 🌐 网络和代理问题
 
 <details>
-<summary><strong>Q: 无法访问Google Sheets怎么办？</strong></summary>
+<summary><strong>Q: 角色ID识别失败怎么办？</strong></summary>
 
-**A:** 配置代理或使用本地缓存：
+**A:** 检查MOD文件命名规范：
 
-1. **配置代理**:
-   ```bash
-   cd src
-   python config_manager.py
-   # 启用代理并设置正确的代理地址
-   ```
+1. **文件名格式**:
+   - 必须包含完整的角色ID：char000101, illust_dating001等
+   - 支持的文件格式：.atlas, .modfile, .skel, .json
+   - 避免在文件名中添加多余的字符
 
-2. **使用本地缓存**:
-   - 系统会自动缓存已获取的数据
-   - 离线模式下可以使用之前的缓存
+2. **支持的ID格式**:
+   - char* 系列：char000101, char000102等
+   - illust_* 系列：illust_dating001, illust_special002等  
+   - specialIllust* 系列：specialIllust001, specialillust002等
+
+3. **排查方法**:
+   - 检查日志输出中的"提取到角色ID"信息
+   - 确认文件名与预期ID格式匹配
 </details>
 
 <details>
@@ -522,20 +529,31 @@ pip install requests beautifulsoup4 lxml tqdm UnityPy Pillow blackboxprotobuf
 <details>
 <summary><strong>Q: MOD文件应该放在哪里？</strong></summary>
 
-**A:** 标准目录结构：
+**A:** 新的简化目录结构：
 
 ```
-replace/
-├── {角色名}/
-│   ├── {服装名}/
-│   │   ├── CUTSCENE/
-│   │   │   └── {您的MOD名}/    # 技能动画MOD
-│   │   │       ├── texture.png
-│   │   │       └── ...
-│   │   └── IDLE/
-│   │       └── {您的MOD名}/    # 立绘动画MOD
-│   │           ├── texture.png
-│   │           └── ...
+workspace/mod_projects/{工作目录名}/
+├── {作者名1}/
+│   ├── IDLE/                    # 立绘动画MOD
+│   │   ├── {MOD名称1}/
+│   │   │   ├── char000101.atlas      # 文件名包含角色ID
+│   │   │   └── char000101.modfile
+│   │   └── {MOD名称2}/
+│   │       └── illust_dating001.atlas
+│   └── CUTSCENE/                # 技能动画MOD
+│       └── {MOD名称3}/
+│           ├── char000102.skel
+│           └── char000102.json
+└── {作者名2}/
+    └── IDLE/
+        └── {MOD名称4}/
+            └── specialIllust001.atlas
+
+注意事项：
+- MOD文件名必须包含角色ID (如: char000101, illust_dating001)
+- 系统会从文件名自动识别角色和服装信息  
+- 支持的文件格式: .atlas, .modfile, .skel, .json
+- 支持的角色ID格式: char*, illust_*, specialIllust*, specialillust*
 ```
 </details>
 

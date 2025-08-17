@@ -705,14 +705,20 @@ class BD2ResourceManager:
             for file_path in found_files:
                 char_id = file_path.stem  # 获取不含后缀的文件名
                 
-                # 移除cutscene_或idle_前缀
+                # 移除可能的前缀
                 if char_id:
+                    original_id = char_id
+                    # 移除常见的文件前缀
                     if char_id.startswith('cutscene_'):
                         char_id = char_id[9:]  # 移除 'cutscene_' 前缀（9个字符）
                         logger.info(f"    移除cutscene_前缀，角色ID: {char_id}")
                     elif char_id.startswith('idle_'):
                         char_id = char_id[5:]  # 移除 'idle_' 前缀（5个字符）
                         logger.info(f"    移除idle_前缀，角色ID: {char_id}")
+                    
+                    # 检查是否为有效的角色ID（使用配置的前缀）
+                    if not self.config.is_valid_character_id_prefix(char_id):
+                        logger.warning(f"    提取的ID '{char_id}' 不匹配任何已知前缀，原始文件名: {original_id}")
                 
                 if char_id and char_id not in char_ids:
                     char_ids.append(char_id)
@@ -857,9 +863,9 @@ class BD2ResourceManager:
                     logger.info(f"     资源: {task.data_name}")
                     logger.info(f"     Hash: {task.hash_id}")
                     logger.info(f"     MOD名称: {task.mod_name}")
-                    if executed_count == 0:
-                        logger.info("✅ 没有需要执行的替换任务")
-                        return True,replace_tasks
+                if executed_count == 0:
+                    logger.info("✅ 没有需要执行的替换任务")
+                    return True,replace_tasks
                 
                 logger.info(f"✅ 增量替换映射清单建立完成 (执行: {executed_count}/{len(replace_tasks)})")
                 # if executed_count == 0:
@@ -868,12 +874,11 @@ class BD2ResourceManager:
 
             
             # 第二步：下载资源文件
-            if not is_update_dir:
-                logger.info("📥 第二步：下载资源文件")
-                success = self._download_resources(replace_tasks)
-                if not success:
-                    logger.error("资源下载失败")
-                    return False,replace_tasks
+            logger.info("📥 第二步：下载资源文件")
+            success = self._download_resources(replace_tasks)
+            if not success:
+                logger.error("资源下载失败")
+                return False,replace_tasks
             
             # 第三步：执行Unity资源替换
             logger.info("🔄 第三步：执行Unity资源替换")

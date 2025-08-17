@@ -101,6 +101,7 @@ class BD2ModManager:
             # 删除物理文件（如果指定）
             if delete_files:
                 workspace_path = self.config.get_mod_workspace_path(workspace_name)
+                # print(f"正在删除工作区物理文件: {workspace_path}")
                 if workspace_path.exists():
                     import shutil
                     shutil.rmtree(workspace_path)
@@ -326,9 +327,14 @@ class BD2ModManager:
             tasks: 替换任务列表
         """
         try:
+            
             # 按目标目录分组任务
+            # 是否执行脚本
+            executed_count = 0
             grouped_tasks = {}
             for task in tasks:
+                if task.should_execute:
+                    executed_count += 1
                 task.target_dir = task.target_dir.replace('\\', '/')  # 确保路径格式统一
                 task.target_dir = task.target_dir.replace(self.config.get_targetdata_dir().as_posix(), '')  # 去掉项目根目录部分
                 if task.should_execute:  # 只处理已执行的任务
@@ -339,7 +345,9 @@ class BD2ModManager:
                     mod_name = task.mod_name if task.mod_name else task.char
                     if mod_name not in grouped_tasks[target_dir]:
                         grouped_tasks[target_dir].append(mod_name)
-            
+            if executed_count == 0:
+                logger.info("✅ 没有需要执行的替换任务,跳过脚本执行")
+                return 
             # 对每组内的MOD名称排序
             for target_dir in grouped_tasks:
                 grouped_tasks[target_dir].sort()

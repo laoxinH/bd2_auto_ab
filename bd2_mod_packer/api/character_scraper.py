@@ -199,8 +199,11 @@ class CharacterScraper:
                         if character_cell.strip():
                             current_character = character_cell.strip()
                             
-                            # 判断数据类型：如果第二列看起来像ID（char开头、illust_开头、specialIllust开头、specialillust开头），则调整列位置
-                            if id_or_costume.startswith(('char', 'illust_', 'specialIllust', 'specialillust')):
+                            # 从配置获取有效的ID前缀
+                            valid_prefixes = self._get_valid_id_prefixes()
+                            
+                            # 判断数据类型：如果第二列看起来像ID，则调整列位置
+                            if self._is_valid_id(id_or_costume, valid_prefixes):
                                 current_char_id = id_or_costume.strip()
                                 costume = costume_or_idle.strip()
                                 idle = idle_or_cutscene.strip()
@@ -213,7 +216,8 @@ class CharacterScraper:
                                 cutscene = idle_or_cutscene.strip()
                         else:
                             # 这是一个被rowspan影响的行，使用当前角色信息
-                            if id_or_costume.startswith(('char', 'illust_')):
+                            valid_prefixes = self._get_valid_id_prefixes()
+                            if self._is_valid_id(id_or_costume, valid_prefixes):
                                 # 这行有新的ID，说明是同一角色的不同服装变体
                                 current_char_id = id_or_costume.strip()
                                 costume = costume_or_idle.strip()
@@ -567,6 +571,52 @@ class CharacterScraper:
                 return row
         
         return None
+    
+    def _get_valid_id_prefixes(self) -> list:
+        """
+        获取有效的ID前缀列表
+        
+        Returns:
+            ID前缀列表
+        """
+        try:
+            if _config_available:
+                config = get_config()
+                return config.get_character_id_prefixes()
+        except Exception:
+            pass
+        
+        # 如果配置不可用，使用默认前缀
+        return [
+            "char",
+            "illust_dating", 
+            "illust_talk",
+            "illust_special",
+            "specialillust",
+            "specialIllust",
+            "npc",
+            "storypack"
+        ]
+    
+    def _is_valid_id(self, test_id: str, valid_prefixes: list) -> bool:
+        """
+        检查给定ID是否匹配任何有效前缀
+        
+        Args:
+            test_id: 要检查的ID
+            valid_prefixes: 有效前缀列表
+            
+        Returns:
+            是否匹配
+        """
+        if not test_id or not valid_prefixes:
+            return False
+        
+        test_id = test_id.strip()
+        for prefix in valid_prefixes:
+            if test_id.startswith(prefix):
+                return True
+        return False
 
 
 __all__ = ["CharacterScraper", "CharacterData"]

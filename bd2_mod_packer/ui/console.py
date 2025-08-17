@@ -8,7 +8,21 @@ BD2游戏资源管理的统一控制台界面，提供以下功能：
 - 交互式菜单操作
 
 使用方法:
-    python console.py
+    pyt│ 🔧 依赖环境检查 (选项 4)                                    │
+│   • 检查Python版本兼容性                                   │
+│   • 验证所有第三方库安装状态                               │
+│   • 显示已安装库的版本信息                                 │
+│   • 提供缺失依赖的安装建议                                 │
+│   • 生成依赖环境报告                                       │
+│                                                              │
+│ ⚙️  配置管理器 (选项 5)                                      │
+│   • 打开独立的配置管理工具                                 │
+│   • 管理网络代理和超时设置                                 │
+│   • 修改日志级别和格式配置                                 │
+│   • 管理角色ID前缀识别规则                                 │
+│   • 重置或重新加载配置文件                                 │
+│   • 统一管理所有系统配置项                                 │
+│                                                              │sole.py
 
 作者: oldnew
 日期: 2025-08-15
@@ -17,9 +31,8 @@ BD2游戏资源管理的统一控制台界面，提供以下功能：
 import os
 import sys
 import logging
+import re
 from pathlib import Path
-
-import bd2_mod_packer
 
 # 配置日志
 logging.basicConfig(
@@ -81,8 +94,9 @@ class BD2Console:
 │  2️⃣  删除MOD工作目录 - 删除指定的MOD工作目录               │
 │  3️⃣  清理空文件夹   - 清理工作目录中的空文件夹             │
 │  4️⃣  依赖环境检查   - 检查Python依赖库安装状态             │
-│  5️⃣  显示帮助信息   - 查看详细使用说明                     │
-│  6️⃣  退出程序       - 安全退出控制台                       │
+│  5️⃣  配置管理器     - 打开配置管理工具                     │
+│  6️⃣  显示帮助信息   - 查看详细使用说明                     │
+│  7️⃣  退出程序       - 安全退出控制台                       │
 └─────────────────────────────────────────────────────────────┘
         """
         print(menu)
@@ -267,7 +281,6 @@ class BD2Console:
         Returns:
             是否合法
         """
-        import re
         # 允许中文、英文、数字、下划线、中划线、空格、单引号和一些常见符号
         pattern = r'^[\w\u4e00-\u9fff\s\-_.()（）【】\[\]\'\"]+$'
         return bool(re.match(pattern, name)) and len(name) <= 50
@@ -467,15 +480,15 @@ class BD2Console:
                 print("📋 该工作目录仅在配置中存在，物理路径不存在")
             
             # 要求用户确认
-            confirm = input(f"\n请输入 'DELETE' 确认删除 '{selected_workspace}': ").strip()
-            if confirm != 'DELETE':
+            confirm = input(f"\n请输入 'YES' 确认删除 '{selected_workspace}': ").strip()
+            if confirm != 'YES':
                 print("⚠️  确认文本不匹配，取消删除操作")
                 return
             
             # 使用MOD管理器删除工作区
             from ..core.manager import BD2ModManager
             manager = BD2ModManager()
-            success = manager.delete_workspace(selected_workspace)
+            success = manager.delete_workspace(selected_workspace,True)
             
             if success:
                 print(f"✅ 工作目录 '{selected_workspace}' 删除完成！")
@@ -675,23 +688,68 @@ class BD2Console:
             print(f"  {name}: {cmd}")
         print()
     
+    def open_config_manager(self):
+        """打开配置管理器"""
+        print("\n" + "="*60)
+        print("⚙️  配置管理器")
+        print("="*60)
+        
+        try:
+            # 导入配置管理器
+            import sys
+            from pathlib import Path
+            
+            # 添加项目根目录到路径
+            project_root = Path(__file__).parent.parent.parent
+            sys.path.insert(0, str(project_root))
+            
+            from .config_manager import ConfigManager
+            
+            print("🚀 启动配置管理器...")
+            print("💡 提示：配置管理器将在新的会话中运行")
+            print("🔄 完成配置后将返回到主控制台")
+            print("-" * 60)
+            
+            # 创建并运行配置管理器
+            config_manager = ConfigManager()
+            config_manager.run()
+            
+            print("-" * 60)
+            print("✅ 配置管理器已退出，返回主控制台")
+            
+            # 重新加载配置以应用更改
+            print("🔄 重新加载配置以应用更改...")
+            from ..config.settings import reload_config
+            self.config = reload_config()
+            print("✅ 配置已重新加载")
+            
+        except ImportError as e:
+            logger.error(f"无法导入配置管理器: {e}")
+            print("❌ 配置管理器导入失败")
+            print("💡 请确保 config_manager.py 文件存在于项目根目录")
+        except Exception as e:
+            logger.error(f"配置管理器运行异常: {e}")
+            print(f"❌ 配置管理器运行失败: {e}")
+        
+        print("="*60)
+    
     def get_user_choice(self):
         """获取用户选择"""
         while True:
             try:
-                choice = input("\n请选择操作 (0-6): ").strip()
+                choice = input("\n请选择操作 (0-7): ").strip()
                 
-                if choice in ['0', '1', '2', '3', '4', '5', '6']:
+                if choice in ['0', '1', '2', '3', '4', '5', '6', '7']:
                     return int(choice)
                 else:
-                    print("⚠️  无效选择，请输入 0、1、2、3、4、5 或 6")
+                    print("⚠️  无效选择，请输入 0、1、2、3、4、5、6 或 7")
                     
             except KeyboardInterrupt:
                 print("\n\n⚠️  用户中断程序")
-                return 6
+                return 7
             except EOFError:
                 print("\n\n⚠️  输入结束，退出程序")
-                return 4
+                return 7
             except Exception as e:
                 print(f"⚠️  输入错误: {e}")
     
@@ -725,15 +783,18 @@ class BD2Console:
                     self.execute_dependency_check()
                     
                 elif choice == 5:
-                    self.show_help()
+                    self.open_config_manager()
                     
                 elif choice == 6:
+                    self.show_help()
+                    
+                elif choice == 7:
                     print("\n👋 感谢使用BD2 MOD资源打包控制台！")
                     print("再见！")
                     break
                 
                 # 等待用户按键继续
-                if choice != 6:
+                if choice != 7:
                     input("\n按 Enter 键继续...")
                     # 清屏（跨平台）
                     os.system('cls' if os.name == 'nt' else 'clear')

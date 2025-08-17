@@ -57,8 +57,9 @@ class ConfigManager:
 │  2️⃣  管理代理设置 - 修改网络代理配置                      │
 │  3️⃣  管理网络设置 - 修改超时和重试配置                    │
 │  4️⃣  管理日志设置 - 修改日志级别和格式                    │
-│  5️⃣  重置为默认配置 - 恢复所有设置为默认值                │
-│  6️⃣  重新加载配置 - 从文件重新加载配置                    │
+│  5️⃣  管理角色ID前缀 - 管理角色ID识别前缀                  │
+│  6️⃣  重置为默认配置 - 恢复所有设置为默认值                │
+│  7️⃣  重新加载配置 - 从文件重新加载配置                    │
 │  0️⃣  退出程序     - 保存并退出配置管理器                  │
 └─────────────────────────────────────────────────────────────┘
         """
@@ -92,6 +93,7 @@ class ConfigManager:
         print("\n🔗 API配置:")
         print(f"  谷歌表格URL: {self.config.api.google_sheets_url[:50]}...")
         print(f"  BD2 CDN地址: {self.config.api.bd2_base_url}")
+        print(f"  角色ID前缀: {', '.join(self.config.api.character_id_prefixes)}")
         
         # 项目配置
         print("\n🎮 项目配置:")
@@ -260,6 +262,98 @@ class ConfigManager:
         else:
             print("❌ 无效选择")
     
+    def manage_character_id_prefixes(self):
+        """管理角色ID前缀"""
+        print("\n" + "="*60)
+        print("🆔 角色ID前缀管理")
+        print("="*60)
+        
+        # 显示当前前缀列表
+        current_prefixes = self.config.get_character_id_prefixes()
+        print(f"\n当前配置的角色ID前缀 ({len(current_prefixes)} 个):")
+        for i, prefix in enumerate(current_prefixes, 1):
+            print(f"  {i}. {prefix}")
+        
+        print("\n前缀管理选项:")
+        print("1. 添加新前缀")
+        print("2. 删除现有前缀")
+        print("3. 恢复默认前缀")
+        print("4. 返回主菜单")
+        
+        choice = input("\n请选择 (1-4): ").strip()
+        
+        if choice == "1":
+            self._add_character_id_prefix()
+        elif choice == "2":
+            self._remove_character_id_prefix()
+        elif choice == "3":
+            self._reset_character_id_prefixes()
+        elif choice == "4":
+            return
+        else:
+            print("❌ 无效选择")
+    
+    def _add_character_id_prefix(self):
+        """添加角色ID前缀"""
+        new_prefix = input("\n请输入要添加的前缀: ").strip()
+        
+        if not new_prefix:
+            print("❌ 前缀不能为空")
+            return
+        
+        if self.config.add_character_id_prefix(new_prefix):
+            print(f"✅ 成功添加前缀: {new_prefix}")
+        else:
+            print(f"⚠️  前缀已存在: {new_prefix}")
+    
+    def _remove_character_id_prefix(self):
+        """删除角色ID前缀"""
+        current_prefixes = self.config.get_character_id_prefixes()
+        
+        if len(current_prefixes) <= 1:
+            print("⚠️  至少需要保留一个前缀，无法删除")
+            return
+        
+        print("\n当前前缀列表:")
+        for i, prefix in enumerate(current_prefixes, 1):
+            print(f"  {i}. {prefix}")
+        
+        try:
+            choice = int(input(f"\n请选择要删除的前缀 (1-{len(current_prefixes)}): ").strip())
+            if 1 <= choice <= len(current_prefixes):
+                prefix_to_remove = current_prefixes[choice - 1]
+                if self.config.remove_character_id_prefix(prefix_to_remove):
+                    print(f"✅ 成功删除前缀: {prefix_to_remove}")
+                else:
+                    print(f"❌ 删除失败: {prefix_to_remove}")
+            else:
+                print("❌ 无效选择")
+        except ValueError:
+            print("❌ 请输入有效数字")
+    
+    def _reset_character_id_prefixes(self):
+        """重置角色ID前缀为默认值"""
+        print("\n⚠️  警告：此操作将恢复角色ID前缀为默认设置！")
+        confirm = input("是否确定要重置前缀设置？(y/N): ").strip().lower()
+        
+        if confirm in ['y', 'yes', '是']:
+            default_prefixes = [
+                "char",
+                "illust_dating", 
+                "illust_talk",
+                "illust_special",
+                "specialillust",
+                "specialIllust",
+                "npc",
+                "storypack"
+            ]
+            
+            self.config.api.character_id_prefixes = default_prefixes
+            self.config.save_config()
+            print("✅ 角色ID前缀已重置为默认值")
+        else:
+            print("⚠️  重置操作已取消")
+    
     def reset_to_default(self):
         """重置为默认配置"""
         print("\n" + "="*60)
@@ -295,7 +389,7 @@ class ConfigManager:
     def get_user_choice(self) -> Optional[str]:
         """获取用户选择"""
         try:
-            choice = input("\n请选择操作 (0-6): ").strip()
+            choice = input("\n请选择操作 (0-7): ").strip()
             return choice
         except KeyboardInterrupt:
             print("\n\n⚠️  用户中断程序")
@@ -333,8 +427,10 @@ class ConfigManager:
                 elif choice == "4":
                     self.manage_log_settings()
                 elif choice == "5":
-                    self.reset_to_default()
+                    self.manage_character_id_prefixes()
                 elif choice == "6":
+                    self.reset_to_default()
+                elif choice == "7":
                     self.reload_configuration()
                 elif choice == "0":
                     print("\n💾 保存配置并退出...")
@@ -342,7 +438,7 @@ class ConfigManager:
                     print("👋 感谢使用BD2配置管理工具！")
                     break
                 else:
-                    print("❌ 无效选择，请输入 0-6")
+                    print("❌ 无效选择，请输入 0-7")
                 
                 # 等待用户按键继续
                 if choice != "0":

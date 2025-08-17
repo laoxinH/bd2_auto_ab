@@ -61,6 +61,23 @@ class APIConfig:
     # BD2 CDN设置
     bd2_base_url: str = "https://bd2-cdn.akamaized.net"
     user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+    
+    # 角色ID前缀配置
+    character_id_prefixes: list = None
+    
+    def __post_init__(self):
+        """初始化后处理"""
+        if self.character_id_prefixes is None:
+            self.character_id_prefixes = [
+                "char",
+                "illust_dating", 
+                "illust_talk",
+                "illust_special",
+                "specialillust",
+                "specialIllust",
+                "npc",
+                "storypack"
+            ]
 
 
 @dataclass
@@ -375,6 +392,76 @@ class BD2Config:
             工作区完整路径
         """
         return self.get_mod_projects_dir() / workspace_name
+    
+    def get_character_id_prefixes(self) -> list:
+        """
+        获取角色ID前缀列表
+        
+        Returns:
+            角色ID前缀列表
+        """
+        return self.api.character_id_prefixes.copy()
+    
+    def add_character_id_prefix(self, prefix: str) -> bool:
+        """
+        添加角色ID前缀
+        
+        Args:
+            prefix: 要添加的前缀
+            
+        Returns:
+            是否添加成功
+        """
+        if prefix in self.api.character_id_prefixes:
+            return False
+        
+        self.api.character_id_prefixes.append(prefix)
+        self.save_config()
+        
+        if hasattr(self, 'logger'):
+            self.logger.info(f"已添加角色ID前缀: {prefix}")
+        
+        return True
+    
+    def remove_character_id_prefix(self, prefix: str) -> bool:
+        """
+        移除角色ID前缀
+        
+        Args:
+            prefix: 要移除的前缀
+            
+        Returns:
+            是否移除成功
+        """
+        if prefix not in self.api.character_id_prefixes:
+            return False
+        
+        # 保留至少一个前缀
+        if len(self.api.character_id_prefixes) <= 1:
+            return False
+        
+        self.api.character_id_prefixes.remove(prefix)
+        self.save_config()
+        
+        if hasattr(self, 'logger'):
+            self.logger.info(f"已移除角色ID前缀: {prefix}")
+        
+        return True
+    
+    def is_valid_character_id_prefix(self, test_id: str) -> bool:
+        """
+        检查给定ID是否匹配任何配置的前缀
+        
+        Args:
+            test_id: 要检查的ID
+            
+        Returns:
+            是否匹配
+        """
+        for prefix in self.api.character_id_prefixes:
+            if test_id.startswith(prefix):
+                return True
+        return False
 
 
 # 全局配置实例

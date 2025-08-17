@@ -66,10 +66,12 @@ class PackageResult:
             for target_dir, mod_names in self.mod_groups.items():
                 # text += f"\n【{target_dir}】\n"
                 text += f"MOD文件路径：{target_dir}\n"
-                for mod_name in mod_names:
-                    text += f"{group_index}.{mod_name}\n"
-                    group_index += 1
+                # for mod_name in mod_names:
+                #     text += f"{group_index}.{mod_name}\n"
+                #     group_index += 1
                 text += f"包含MOD数量：{len(mod_names)}\n"
+                text += "详细MOD信息查看MOD路径下的README.txt"
+                text += "---------------------------\n"
         else:
             # 传统列表格式
             for i, mod_name in enumerate(self.mod_list, 1):

@@ -106,10 +106,10 @@ class BD2ResourceManager:
         
         # 初始化组件
         self.cdn_api = BD2CDNAPI(proxies=proxies)
-        self.character_scraper = CharacterScraper()
+        self.character_scraper = CharacterScraper(url=self.config.get_google_sheets_url(), proxies=proxies)
         self.unity_processor = UnityResourceProcessor()
-        self.data_downloader = BD2DataDownloader(output_dir=str(self.downloaded_dir),proxies=proxies)
-        
+        self.data_downloader = BD2DataDownloader(output_dir=str(self.downloaded_dir), proxies=proxies)
+
         logger.info(f"BD2资源管理器初始化完成，项目根目录: {self.project_root}")
         logger.info(f"使用替换目录: {self.replace_dir} (键值: {self.replace_dir_name})")
     

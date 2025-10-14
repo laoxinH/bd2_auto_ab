@@ -243,6 +243,12 @@ class BD2Config:
         
         return config
     
+    def get_google_sheets_url(self) -> str:
+        """获取谷歌表格URL"""
+        return self.api.google_sheets_url
+    
+
+
     def update_proxy(self, enabled: bool, http_proxy: str = None, https_proxy: str = None) -> None:
         """
         更新代理设置
